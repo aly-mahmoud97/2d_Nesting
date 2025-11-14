@@ -3,10 +3,35 @@
 Supports non-rectangular shapes including polygons, trimmed surfaces, and complex boundaries
 
 Evolution from rectangular-only nesting:
-- Input: Planar surfaces (Brep, Surface) instead of dimensions
+- Input: Planar surfaces (Brep, Surface, Curve) instead of dimensions
 - Collision: Polygon-polygon intersection instead of rectangle-only
 - Rotation: Geometric transformation with 90-degree increments
 - Future: Support for shapes with holes
+
+=== GRASSHOPPER INPUTS ===
+Required:
+  planar_surfaces : List of Brep, Surface, or Curve objects to nest
+  sheet_width     : Number or list of sheet widths
+  sheet_height    : Number or list of sheet heights
+  kerf            : Number - blade thickness / spacing between panels
+
+Optional:
+  panel_tags      : List of strings/numbers to identify panels
+
+=== GRASSHOPPER OUTPUTS ===
+  a : Tree of Curves - Placed panel boundaries (with kerf offset)
+  b : Tree of Integers - Panel IDs
+  c : Integer - Number of sheets used
+  d : List of Rectangles - Sheet boundaries
+  e : List of Dictionaries - Detailed panel info (id, area, rotation, position, etc.)
+  f : Tree of Strings - Panel tags
+  g : List of Integers - Sheet type IDs
+
+=== USAGE ===
+1. Connect your surfaces (Brep/Curve/Surface) to 'planar_surfaces' input
+2. Set sheet sizes and kerf
+3. Run!
+4. Output 'a' gives you the placed boundary curves for cutting
 """
 
 import Rhino.Geometry as rg
@@ -55,44 +80,76 @@ class PlanarPanel:
 
     def _extract_boundary(self, surface):
         """Extract boundary curve from planar surface and project to XY plane"""
+        curve = None
+
         # Handle different input types
         if isinstance(surface, rg.Brep):
             # Get outer boundary from first face
-            if surface.Faces.Count > 0:
-                face = surface.Faces[0]
-                loops = face.Loops
+            if surface.Faces.Count == 0:
+                raise ValueError(f"Brep has no faces (empty Brep)")
 
-                # Find outer loop (typically the first one)
-                for loop in loops:
-                    if loop.LoopType == rg.BrepLoopType.Outer:
-                        curve = loop.To3dCurve()
-                        break
-                else:
-                    # Fallback to first loop if no outer loop found
-                    curve = loops[0].To3dCurve()
-            else:
-                raise ValueError(f"Brep surface {self.id} has no faces")
+            face = surface.Faces[0]
+            loops = face.Loops
+
+            if loops.Count == 0:
+                raise ValueError(f"Brep face has no loops")
+
+            # Find outer loop (typically the first one)
+            for loop in loops:
+                if loop.LoopType == rg.BrepLoopType.Outer:
+                    curve = loop.To3dCurve()
+                    break
+
+            # Fallback to first loop if no outer loop found
+            if curve is None:
+                curve = loops[0].To3dCurve()
+
+            if curve is None:
+                raise ValueError(f"Could not extract curve from Brep loop")
 
         elif isinstance(surface, rg.Surface):
             # Get isocurve boundary
-            curves = []
-            curves.append(surface.IsoCurve(0, surface.Domain(1).Min))
-            curves.append(surface.IsoCurve(1, surface.Domain(0).Max))
-            curves.append(surface.IsoCurve(0, surface.Domain(1).Max))
-            curves.append(surface.IsoCurve(1, surface.Domain(0).Min))
-            curve = rg.Curve.JoinCurves(curves)[0]
+            try:
+                curves = []
+                curves.append(surface.IsoCurve(0, surface.Domain(1).Min))
+                curves.append(surface.IsoCurve(1, surface.Domain(0).Max))
+                curves.append(surface.IsoCurve(0, surface.Domain(1).Max))
+                curves.append(surface.IsoCurve(1, surface.Domain(0).Min))
+
+                # Join curves
+                joined = rg.Curve.JoinCurves(curves)
+                if joined and len(joined) > 0:
+                    curve = joined[0]
+                else:
+                    raise ValueError("Could not join surface boundary curves")
+            except Exception as ex:
+                raise ValueError(f"Could not extract boundary from Surface: {ex}")
 
         elif isinstance(surface, rg.Curve):
             curve = surface
 
         else:
-            raise ValueError(f"Unsupported surface type: {type(surface)}")
+            raise ValueError(f"Unsupported surface type: {type(surface).__name__}")
+
+        if curve is None:
+            raise ValueError(f"Failed to extract boundary curve")
+
+        # Check if curve is valid
+        if not curve.IsValid:
+            raise ValueError(f"Extracted curve is not valid")
 
         # Project to XY plane
-        plane = rg.Plane.WorldXY
-        curve_projected = rg.Curve.ProjectToPlane(curve, plane)
+        try:
+            plane = rg.Plane.WorldXY
+            curve_projected = rg.Curve.ProjectToPlane(curve, plane)
 
-        return curve_projected
+            if curve_projected is None:
+                raise ValueError("Projection to XY plane returned None")
+
+            return curve_projected
+
+        except Exception as ex:
+            raise ValueError(f"Could not project curve to XY plane: {ex}")
 
     def _calculate_area(self):
         """Calculate area using curve"""
@@ -769,27 +826,67 @@ def extract_values(data, param_name):
 
 
 def extract_planar_surfaces(data):
-    """Extract planar surfaces from tree input"""
+    """
+    Extract planar surfaces from input (simplified to accept list)
+    Accepts: single surface, list of surfaces, or Grasshopper DataTree
+    """
     surfaces = []
 
+    # Debug: Show what we received
+    print(f"Input type: {type(data)}")
+    print(f"Input value: {data}")
+
+    # Handle None or empty
+    if data is None:
+        return surfaces
+
+    # Case 1: Single surface object
+    if isinstance(data, (rg.Brep, rg.Surface, rg.Curve)):
+        print("  -> Single surface detected")
+        surfaces.append(data)
+        return surfaces
+
+    # Case 2: Python list
+    if isinstance(data, list):
+        print(f"  -> List detected with {len(data)} items")
+        for i, item in enumerate(data):
+            if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+                surfaces.append(item)
+                print(f"     Item {i}: Valid {type(item).__name__}")
+            else:
+                print(f"     Item {i}: Skipped {type(item)}")
+        return surfaces
+
+    # Case 3: Try to handle Grasshopper DataTree (optional)
     try:
-        tree_data = tree_to_list(data)
-        for branch in tree_data:
-            if isinstance(branch, list):
-                for item in branch:
+        # Check if it's a Grasshopper DataTree
+        if hasattr(data, 'Branches'):
+            print("  -> Grasshopper DataTree detected")
+            for i, branch in enumerate(data.Branches):
+                for j, item in enumerate(branch):
                     if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
                         surfaces.append(item)
-            else:
-                if isinstance(branch, (rg.Brep, rg.Surface, rg.Curve)):
-                    surfaces.append(branch)
-    except:
-        # Direct input
-        if isinstance(data, (rg.Brep, rg.Surface, rg.Curve)):
-            surfaces = [data]
-        elif isinstance(data, list):
-            for item in data:
-                if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
-                    surfaces.append(item)
+                        print(f"     Branch {i}, Item {j}: Valid {type(item).__name__}")
+            return surfaces
+    except Exception as ex:
+        print(f"  -> DataTree processing failed: {ex}")
+
+    # Case 4: Try tree_to_list (Grasshopper helper)
+    try:
+        print("  -> Trying tree_to_list conversion...")
+        tree_data = tree_to_list(data)
+        if isinstance(tree_data, list):
+            for branch in tree_data:
+                if isinstance(branch, list):
+                    for item in branch:
+                        if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+                            surfaces.append(item)
+                else:
+                    if isinstance(branch, (rg.Brep, rg.Surface, rg.Curve)):
+                        surfaces.append(branch)
+        print(f"  -> Found {len(surfaces)} surfaces via tree_to_list")
+    except Exception as ex:
+        print(f"  -> tree_to_list failed: {ex}")
 
     return surfaces
 
@@ -809,38 +906,73 @@ sheet_sizes = [(widths[i], heights[i], i) for i in range(n)]
 print(f"Sheet sizes: {[(w, h) for w, h, _ in sheet_sizes]}")
 
 # Extract planar surfaces
-surfaces = extract_planar_surfaces(planar_surfaces_tree)
+print("\n=== EXTRACTING PLANAR SURFACES ===")
+surfaces = extract_planar_surfaces(planar_surfaces)
 
 if not surfaces:
-    raise ValueError("No valid planar surfaces found in input")
+    raise ValueError(
+        "No valid planar surfaces found in input!\n"
+        "Expected: List of Brep, Surface, or Curve objects\n"
+        "Received: Check debug output above"
+    )
 
-# Extract tags
+print(f"\nSuccessfully extracted {len(surfaces)} surfaces")
+
+# Extract tags (optional)
 tags = []
-if panel_tags_tree:
-    try:
-        tag_data = tree_to_list(panel_tags_tree)
-        for branch in tag_data:
-            if isinstance(branch, list):
-                tags.extend(branch)
-            else:
-                tags.append(branch)
-    except:
-        pass
+try:
+    if panel_tags:
+        print("\n=== EXTRACTING TAGS ===")
+        if isinstance(panel_tags, list):
+            tags = [str(t) if t is not None else "" for t in panel_tags]
+        else:
+            try:
+                tag_data = tree_to_list(panel_tags)
+                for branch in tag_data:
+                    if isinstance(branch, list):
+                        tags.extend([str(t) if t is not None else "" for t in branch])
+                    else:
+                        tags.append(str(branch) if branch is not None else "")
+            except:
+                tags = [str(panel_tags)]
+        print(f"Extracted {len(tags)} tags")
+except Exception as ex:
+    print(f"Warning: Could not extract tags: {ex}")
+    tags = []
 
 # Create panels from planar surfaces
+print("\n=== CREATING PANELS ===")
 panels = []
+failed_panels = []
+
 for i, surface in enumerate(surfaces):
     try:
         tag = tags[i] if i < len(tags) else None
         panel = PlanarPanel(surface, i, tag)
         panels.append(panel)
+        print(f"Panel {i}: Created successfully - Area: {panel.area:.2f}, BBox: {panel.w:.1f}x{panel.h:.1f}")
     except Exception as ex:
-        print(f"Warning: Could not process surface {i}: {ex}")
+        failed_panels.append((i, str(ex)))
+        print(f"Panel {i}: FAILED - {ex}")
+
+if failed_panels:
+    print(f"\nWarning: {len(failed_panels)} panels could not be processed:")
+    for idx, error in failed_panels:
+        print(f"  Panel {idx}: {error}")
 
 if not panels:
-    raise ValueError("No valid panels could be created from surfaces")
+    raise ValueError(
+        f"No valid panels could be created from surfaces!\n"
+        f"Total surfaces provided: {len(surfaces)}\n"
+        f"Failed to process: {len(failed_panels)}\n"
+        "Check that surfaces are valid planar Brep/Surface/Curve objects"
+    )
 
-print(f"Processing {len(panels)} planar panels with kerf={kerf}")
+print(f"\n=== NESTING CONFIGURATION ===")
+print(f"Panels to nest: {len(panels)}")
+print(f"Sheet sizes: {[(w, h) for w, h, _ in sheet_sizes]}")
+print(f"Kerf: {kerf}")
+print(f"Total panel area: {sum(p.area for p in panels):.2f}")
 
 # ===== NESTING =====
 sheets = nest_panels(panels, sheet_sizes)
