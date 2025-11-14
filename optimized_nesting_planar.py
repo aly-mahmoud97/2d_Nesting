@@ -170,9 +170,15 @@ class PlanarPanel:
         # Convert curve to polyline for easier collision detection
         polyline = None
 
-        if isinstance(self.boundary_curve, rg.PolylineCurve):
-            polyline = self.boundary_curve.ToPolyline()
-        else:
+        # Robust type checking for PolylineCurve
+        curve_type = type(self.boundary_curve).__name__
+        if curve_type == 'PolylineCurve' or hasattr(self.boundary_curve, 'ToPolyline'):
+            try:
+                polyline = self.boundary_curve.ToPolyline()
+            except:
+                pass
+
+        if polyline is None:
             # Discretize curve
             params = self.boundary_curve.DivideByCount(50, True)
             if params:
