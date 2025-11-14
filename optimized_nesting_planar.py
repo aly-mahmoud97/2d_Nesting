@@ -81,9 +81,11 @@ class PlanarPanel:
     def _extract_boundary(self, surface):
         """Extract boundary curve from planar surface and project to XY plane"""
         curve = None
+        type_name = type(surface).__name__
 
-        # Handle different input types
-        if isinstance(surface, rg.Brep):
+        # Handle different input types using robust type checking
+        # Check if it's a Brep-like object
+        if type_name in ['Brep', 'BrepFace'] or hasattr(surface, 'Faces'):
             # Get outer boundary from first face
             if surface.Faces.Count == 0:
                 raise ValueError(f"Brep has no faces (empty Brep)")
@@ -107,7 +109,8 @@ class PlanarPanel:
             if curve is None:
                 raise ValueError(f"Could not extract curve from Brep loop")
 
-        elif isinstance(surface, rg.Surface):
+        # Check if it's a Surface-like object (including PlaneSurface, NurbsSurface, etc.)
+        elif type_name in ['Surface', 'NurbsSurface', 'PlaneSurface'] or hasattr(surface, 'IsoCurve'):
             # Get isocurve boundary
             try:
                 curves = []
@@ -125,11 +128,12 @@ class PlanarPanel:
             except Exception as ex:
                 raise ValueError(f"Could not extract boundary from Surface: {ex}")
 
-        elif isinstance(surface, rg.Curve):
+        # Check if it's a Curve-like object
+        elif type_name in ['Curve', 'NurbsCurve', 'PolylineCurve', 'LineCurve', 'ArcCurve', 'PolyCurve'] or hasattr(surface, 'PointAtStart'):
             curve = surface
 
         else:
-            raise ValueError(f"Unsupported surface type: {type(surface).__name__}")
+            raise ValueError(f"Unsupported surface type: {type_name}")
 
         if curve is None:
             raise ValueError(f"Failed to extract boundary curve")
