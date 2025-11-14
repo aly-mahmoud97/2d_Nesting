@@ -825,6 +825,41 @@ def extract_values(data, param_name):
     return values
 
 
+def is_valid_geometry(item):
+    """
+    Check if item is valid Brep, Surface, or Curve using robust type checking
+    Works around IronPython/Grasshopper module instance issues
+    """
+    if item is None:
+        return False
+
+    # Get type name as string
+    type_name = type(item).__name__
+
+    # Check by type name (more robust in Grasshopper)
+    if type_name in ['Brep', 'BrepFace', 'Surface', 'NurbsSurface',
+                     'PlaneSurface', 'Curve', 'NurbsCurve', 'PolylineCurve',
+                     'LineCurve', 'ArcCurve', 'PolyCurve']:
+        return True
+
+    # Fallback: check for expected attributes
+    if hasattr(item, 'Faces') or hasattr(item, 'Edges'):  # Brep-like
+        return True
+    if hasattr(item, 'IsClosed') and hasattr(item, 'GetBoundingBox'):  # Curve-like
+        return True
+    if hasattr(item, 'Domain') and hasattr(item, 'IsoCurve'):  # Surface-like
+        return True
+
+    # Final check: try isinstance with imported types
+    try:
+        if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+            return True
+    except:
+        pass
+
+    return False
+
+
 def extract_planar_surfaces(data):
     """
     Extract planar surfaces from input (simplified to accept list)
@@ -833,6 +868,7 @@ def extract_planar_surfaces(data):
     surfaces = []
 
     # Debug: Show what we received
+    print(f"\n=== EXTRACTING PLANAR SURFACES ===")
     print(f"Input type: {type(data)}")
     print(f"Input value: {data}")
 
@@ -841,7 +877,7 @@ def extract_planar_surfaces(data):
         return surfaces
 
     # Case 1: Single surface object
-    if isinstance(data, (rg.Brep, rg.Surface, rg.Curve)):
+    if is_valid_geometry(data):
         print("  -> Single surface detected")
         surfaces.append(data)
         return surfaces
@@ -850,7 +886,7 @@ def extract_planar_surfaces(data):
     if isinstance(data, list):
         print(f"  -> List detected with {len(data)} items")
         for i, item in enumerate(data):
-            if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+            if is_valid_geometry(item):
                 surfaces.append(item)
                 print(f"     Item {i}: Valid {type(item).__name__}")
             else:
@@ -864,7 +900,7 @@ def extract_planar_surfaces(data):
             print("  -> Grasshopper DataTree detected")
             for i, branch in enumerate(data.Branches):
                 for j, item in enumerate(branch):
-                    if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+                    if is_valid_geometry(item):
                         surfaces.append(item)
                         print(f"     Branch {i}, Item {j}: Valid {type(item).__name__}")
             return surfaces
@@ -879,10 +915,10 @@ def extract_planar_surfaces(data):
             for branch in tree_data:
                 if isinstance(branch, list):
                     for item in branch:
-                        if isinstance(item, (rg.Brep, rg.Surface, rg.Curve)):
+                        if is_valid_geometry(item):
                             surfaces.append(item)
                 else:
-                    if isinstance(branch, (rg.Brep, rg.Surface, rg.Curve)):
+                    if is_valid_geometry(branch):
                         surfaces.append(branch)
         print(f"  -> Found {len(surfaces)} surfaces via tree_to_list")
     except Exception as ex:
@@ -906,7 +942,6 @@ sheet_sizes = [(widths[i], heights[i], i) for i in range(n)]
 print(f"Sheet sizes: {[(w, h) for w, h, _ in sheet_sizes]}")
 
 # Extract planar surfaces
-print("\n=== EXTRACTING PLANAR SURFACES ===")
 surfaces = extract_planar_surfaces(planar_surfaces)
 
 if not surfaces:
