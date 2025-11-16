@@ -360,10 +360,10 @@ public class BeamSawNestingAlgorithm
     private bool TryPlacePanel(Panel panel)
     {
         // Only consider sub-sheets from the CURRENT sheet
-        // Use best-fit (smallest first) to minimize wasted space in guillotine cuts
+        // Use largest-first to reduce fragmentation, especially when rotation is constrained
         var currentSheetSubSheets = remainingSubSheets
             .Where(s => s.SheetIndex == currentSheetIndex)
-            .OrderBy(s => s.Area)
+            .OrderByDescending(s => s.Area)
             .ToList();
 
         foreach (var subSheet in currentSheetSubSheets)
