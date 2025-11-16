@@ -751,15 +751,27 @@ public class Script_Instance : GH_ScriptInstance
                 .ThenBy(p => p.X)
                 .ToList();
 
-            // Calculate quantities for panels with same dimensions
-            var panelQuantities = new Dictionary<string, int>();
+            // Group identical panels and assign group IDs
+            var panelGroups = new Dictionary<string, List<PlacedPanel>>();
             foreach (var p in placed)
             {
                 string key = $"{p.Width:F2}×{p.Height:F2}";
-                if (panelQuantities.ContainsKey(key))
-                    panelQuantities[key]++;
-                else
-                    panelQuantities[key] = 1;
+                if (!panelGroups.ContainsKey(key))
+                    panelGroups[key] = new List<PlacedPanel>();
+                panelGroups[key].Add(p);
+            }
+
+            // Assign group IDs and instance numbers to each panel
+            var panelGroupIds = new Dictionary<PlacedPanel, (int groupId, int instanceId, int totalQty)>();
+            int currentGroupId = 1;
+            foreach (var group in panelGroups.Values)
+            {
+                int totalQty = group.Count;
+                for (int i = 0; i < group.Count; i++)
+                {
+                    panelGroupIds[group[i]] = (currentGroupId, i + 1, totalQty);
+                }
+                currentGroupId++;
             }
 
             debugMessages.Add($"=== NESTING RESULTS ===");
@@ -827,10 +839,16 @@ public class Script_Instance : GH_ScriptInstance
                 }
                 transformList.Add(transform);
 
-                // Create panel tag with quantity information
-                string dimensionKey = $"{p.Width:F2}×{p.Height:F2}";
-                int quantity = panelQuantities.ContainsKey(dimensionKey) ? panelQuantities[dimensionKey] : 1;
-                panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id}) Qty:{quantity}");
+                // Create panel tag with group ID and instance number
+                if (panelGroupIds.ContainsKey(p))
+                {
+                    var (groupId, instanceId, totalQty) = panelGroupIds[p];
+                    panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{groupId}-{instanceId}) Qty:{totalQty}");
+                }
+                else
+                {
+                    panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#0-0)");
+                }
             }
 
             PlacedRectangles = placedRects;
