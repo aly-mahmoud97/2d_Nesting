@@ -810,7 +810,7 @@ public class Script_Instance : GH_ScriptInstance
                 transformList.Add(transform);
 
                 // Create panel tag
-                panelTagList.Add($"{p.Width:F0}×{p.Height:F0} (#{p.Panel.Id})");
+                panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
             }
 
             PlacedRectangles = placedRects;
