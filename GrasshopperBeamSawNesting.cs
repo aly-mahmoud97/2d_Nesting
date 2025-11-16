@@ -33,10 +33,22 @@
  *
  */
 
+// Grasshopper Script Instance
+#region Usings
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Collections;
+using System.Collections.Generic;
+using System.Drawing;
+
+using Rhino;
 using Rhino.Geometry;
+
+using Grasshopper;
+using Grasshopper.Kernel;
+using Grasshopper.Kernel.Data;
+using Grasshopper.Kernel.Types;
+#endregion
 
 #region Enumerations
 
@@ -304,7 +316,7 @@ public class BeamSawNestingAlgorithm
 
                 if (!placed)
                 {
-                    Print($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
                 }
             }
         }
@@ -553,226 +565,245 @@ internal class PanelPlacement
 #endregion
 
 // ============================================================================
-// GRASSHOPPER SCRIPT MAIN CODE
+// GRASSHOPPER SCRIPT INSTANCE
 // ============================================================================
 
-private void RunScript(
-    double SheetWidth,
-    double SheetHeight,
-    string SheetGrain,
-    List<double> PanelWidths,
-    List<double> PanelHeights,
-    List<bool> RotationAllowed,
-    List<string> PanelGrains,
-    double Kerf,
-    string CutOrientation,
-    string SortStrategy,
-    bool Run,
-    ref object PlacedRectangles,
-    ref object PanelInfo,
-    ref object SheetRectangles,
-    ref object CutLines,
-    ref object KerfRegions,
-    ref object RemainingSheets,
-    ref object CutSequence,
-    ref object Statistics,
-    ref object Debug)
+public class Script_Instance : GH_ScriptInstance
 {
-    var debugMessages = new List<string>();
+    #region Notes
+    /*
+      Members:
+        RhinoDoc RhinoDocument
+        GH_Document GrasshopperDocument
+        IGH_Component Component
+        int Iteration
 
-    try
+      Methods (Virtual & overridable):
+        Print(string text)
+        Print(string format, params object[] args)
+        Reflect(object obj)
+        Reflect(object obj, string method_name)
+    */
+    #endregion
+
+    private void RunScript(
+        double SheetWidth,
+        double SheetHeight,
+        string SheetGrain,
+        List<double> PanelWidths,
+        List<double> PanelHeights,
+        List<bool> RotationAllowed,
+        List<string> PanelGrains,
+        double Kerf,
+        string CutOrientation,
+        string SortStrategy,
+        bool Run,
+        ref object PlacedRectangles,
+        ref object PanelInfo,
+        ref object SheetRectangles,
+        ref object CutLines,
+        ref object KerfRegions,
+        ref object RemainingSheets,
+        ref object CutSequence,
+        ref object Statistics,
+        ref object Debug)
     {
-        if (!Run)
-        {
-            Debug = "Set 'Run' to true to execute the algorithm";
-            return;
-        }
+        var debugMessages = new List<string>();
 
-        // Validate inputs
-        if (PanelWidths == null || PanelHeights == null || PanelWidths.Count == 0)
+        try
         {
-            Debug = "ERROR: PanelWidths and PanelHeights are required";
-            return;
-        }
-
-        if (PanelWidths.Count != PanelHeights.Count)
-        {
-            Debug = "ERROR: PanelWidths and PanelHeights must have the same count";
-            return;
-        }
-
-        if (SheetWidth <= 0 || SheetHeight <= 0)
-        {
-            Debug = "ERROR: SheetWidth and SheetHeight must be positive";
-            return;
-        }
-
-        if (Kerf < 0)
-        {
-            Debug = "ERROR: Kerf cannot be negative";
-            return;
-        }
-
-        debugMessages.Add($"=== BEAM SAW NESTING ALGORITHM ===");
-        debugMessages.Add($"Sheet: {SheetWidth} x {SheetHeight}");
-        debugMessages.Add($"Panels to nest: {PanelWidths.Count}");
-        debugMessages.Add($"Kerf: {Kerf}");
-
-        // Parse sheet grain
-        SheetGrainDirection sheetGrainDir = SheetGrainDirection.Horizontal;
-        if (!string.IsNullOrEmpty(SheetGrain))
-        {
-            if (SheetGrain.ToLower() == "vertical")
-                sheetGrainDir = SheetGrainDirection.Vertical;
-        }
-        debugMessages.Add($"Sheet grain: {sheetGrainDir}");
-
-        // Parse cut orientation preference
-        CutOrientation cutOrient = CutOrientation.Horizontal;
-        if (!string.IsNullOrEmpty(CutOrientation))
-        {
-            if (CutOrientation.ToLower() == "vertical")
-                cutOrient = CutOrientation.Vertical;
-        }
-
-        // Parse sort strategy
-        PanelSortStrategy sortStrat = PanelSortStrategy.AreaDescending;
-        if (!string.IsNullOrEmpty(SortStrategy))
-        {
-            switch (SortStrategy.ToLower())
+            if (!Run)
             {
-                case "largestfirst":
-                    sortStrat = PanelSortStrategy.LargestFirst;
-                    break;
-                case "smallestfirst":
-                    sortStrat = PanelSortStrategy.SmallestFirst;
-                    break;
-                case "areaascending":
-                    sortStrat = PanelSortStrategy.AreaAscending;
-                    break;
-            }
-        }
-
-        // Create panels
-        var panels = new List<Panel>();
-        for (int i = 0; i < PanelWidths.Count; i++)
-        {
-            // Determine rotation constraint
-            RotationConstraint rotConstraint = RotationConstraint.Rotation90Allowed;
-            if (RotationAllowed != null && i < RotationAllowed.Count && !RotationAllowed[i])
-            {
-                rotConstraint = RotationConstraint.NoRotation;
+                Debug = "Set 'Run' to true to execute the algorithm";
+                return;
             }
 
-            // Determine grain direction
-            PanelGrainDirection grainDir = PanelGrainDirection.MatchSheet;
-            if (PanelGrains != null && i < PanelGrains.Count && !string.IsNullOrEmpty(PanelGrains[i]))
+            // Validate inputs
+            if (PanelWidths == null || PanelHeights == null || PanelWidths.Count == 0)
             {
-                string grain = PanelGrains[i].ToLower();
-                if (grain.Contains("horizontal"))
-                    grainDir = PanelGrainDirection.FixedHorizontal;
-                else if (grain.Contains("vertical"))
-                    grainDir = PanelGrainDirection.FixedVertical;
+                Debug = "ERROR: PanelWidths and PanelHeights are required";
+                return;
             }
 
-            panels.Add(new Panel(PanelWidths[i], PanelHeights[i], rotConstraint, grainDir, i, $"Panel_{i}"));
+            if (PanelWidths.Count != PanelHeights.Count)
+            {
+                Debug = "ERROR: PanelWidths and PanelHeights must have the same count";
+                return;
+            }
+
+            if (SheetWidth <= 0 || SheetHeight <= 0)
+            {
+                Debug = "ERROR: SheetWidth and SheetHeight must be positive";
+                return;
+            }
+
+            if (Kerf < 0)
+            {
+                Debug = "ERROR: Kerf cannot be negative";
+                return;
+            }
+
+            debugMessages.Add($"=== BEAM SAW NESTING ALGORITHM ===");
+            debugMessages.Add($"Sheet: {SheetWidth} x {SheetHeight}");
+            debugMessages.Add($"Panels to nest: {PanelWidths.Count}");
+            debugMessages.Add($"Kerf: {Kerf}");
+
+            // Parse sheet grain
+            SheetGrainDirection sheetGrainDir = SheetGrainDirection.Horizontal;
+            if (!string.IsNullOrEmpty(SheetGrain))
+            {
+                if (SheetGrain.ToLower() == "vertical")
+                    sheetGrainDir = SheetGrainDirection.Vertical;
+            }
+            debugMessages.Add($"Sheet grain: {sheetGrainDir}");
+
+            // Parse cut orientation preference
+            CutOrientation cutOrient = CutOrientation.Horizontal;
+            if (!string.IsNullOrEmpty(CutOrientation))
+            {
+                if (CutOrientation.ToLower() == "vertical")
+                    cutOrient = CutOrientation.Vertical;
+            }
+
+            // Parse sort strategy
+            PanelSortStrategy sortStrat = PanelSortStrategy.AreaDescending;
+            if (!string.IsNullOrEmpty(SortStrategy))
+            {
+                switch (SortStrategy.ToLower())
+                {
+                    case "largestfirst":
+                        sortStrat = PanelSortStrategy.LargestFirst;
+                        break;
+                    case "smallestfirst":
+                        sortStrat = PanelSortStrategy.SmallestFirst;
+                        break;
+                    case "areaascending":
+                        sortStrat = PanelSortStrategy.AreaAscending;
+                        break;
+                }
+            }
+
+            // Create panels
+            var panels = new List<Panel>();
+            for (int i = 0; i < PanelWidths.Count; i++)
+            {
+                // Determine rotation constraint
+                RotationConstraint rotConstraint = RotationConstraint.Rotation90Allowed;
+                if (RotationAllowed != null && i < RotationAllowed.Count && !RotationAllowed[i])
+                {
+                    rotConstraint = RotationConstraint.NoRotation;
+                }
+
+                // Determine grain direction
+                PanelGrainDirection grainDir = PanelGrainDirection.MatchSheet;
+                if (PanelGrains != null && i < PanelGrains.Count && !string.IsNullOrEmpty(PanelGrains[i]))
+                {
+                    string grain = PanelGrains[i].ToLower();
+                    if (grain.Contains("horizontal"))
+                        grainDir = PanelGrainDirection.FixedHorizontal;
+                    else if (grain.Contains("vertical"))
+                        grainDir = PanelGrainDirection.FixedVertical;
+                }
+
+                panels.Add(new Panel(PanelWidths[i], PanelHeights[i], rotConstraint, grainDir, i, $"Panel_{i}"));
+            }
+
+            debugMessages.Add($"Panels created successfully");
+            debugMessages.Add("");
+
+            // Run algorithm
+            var algorithm = new BeamSawNestingAlgorithm(
+                SheetWidth,
+                SheetHeight,
+                sheetGrainDir,
+                Kerf,
+                cutOrient,
+                sortStrat
+            );
+
+            algorithm.Nest(panels);
+
+            var placed = algorithm.GetPlacedPanels();
+            var remaining = algorithm.GetRemainingSubSheets();
+            var cuts = algorithm.GetCutLines();
+            var sequence = algorithm.GetCutSequence();
+
+            debugMessages.Add($"=== NESTING RESULTS ===");
+            debugMessages.Add($"Sheets used: {algorithm.GetSheetCount()}");
+            debugMessages.Add($"Panels placed: {placed.Count} / {panels.Count}");
+            debugMessages.Add($"Overall efficiency: {algorithm.GetOverallEfficiency():F2}%");
+            debugMessages.Add($"Total cuts: {cuts.Count}");
+            debugMessages.Add("");
+
+            // Generate outputs
+            var placedRects = new List<Rectangle3d>();
+            var panelInfoList = new List<string>();
+
+            foreach (var p in placed)
+            {
+                placedRects.Add(p.GetRectangle());
+                panelInfoList.Add($"Panel {p.Panel.Id}: " +
+                    $"Pos=({p.X:F1},{p.Y:F1}), " +
+                    $"Size={p.Width:F1}x{p.Height:F1}, " +
+                    $"Rotation={p.RotationDegrees}°, " +
+                    $"Grain={p.FinalGrainDirection}, " +
+                    $"Sheet={p.SheetIndex}");
+            }
+
+            PlacedRectangles = placedRects;
+            PanelInfo = panelInfoList;
+
+            // Sheet rectangles
+            var sheetRects = new List<Rectangle3d>();
+            for (int i = 0; i < algorithm.GetSheetCount(); i++)
+            {
+                Plane plane = new Plane(new Point3d(0, 0, 0), Vector3d.ZAxis);
+                sheetRects.Add(new Rectangle3d(plane, SheetWidth, SheetHeight));
+            }
+            SheetRectangles = sheetRects;
+
+            // Cut lines
+            var cutLineGeometry = cuts.Select(c => c.GetLine()).ToList();
+            CutLines = cutLineGeometry;
+
+            // Kerf regions
+            var kerfRects = cuts.Select(c => c.GetKerfRectangle()).ToList();
+            KerfRegions = kerfRects;
+
+            // Remaining sub-sheets
+            var remainingRects = remaining.Select(r => r.GetRectangle()).ToList();
+            RemainingSheets = remainingRects;
+
+            // Cut sequence
+            var sequenceInfo = new List<string>();
+            foreach (var op in sequence)
+            {
+                sequenceInfo.Add($"Step {op.SequenceNumber}: {op.Description}");
+            }
+            CutSequence = sequenceInfo;
+
+            // Statistics
+            var stats = new List<string>();
+            stats.Add($"Total sheets: {algorithm.GetSheetCount()}");
+            stats.Add($"Panels placed: {placed.Count} / {panels.Count}");
+            stats.Add($"Total cuts: {cuts.Count}");
+            stats.Add($"Overall efficiency: {algorithm.GetOverallEfficiency():F2}%");
+
+            var utilization = algorithm.GetSheetUtilization();
+            for (int i = 0; i < utilization.Count; i++)
+            {
+                stats.Add($"Sheet {i} efficiency: {utilization[i]:F2}%");
+            }
+            Statistics = stats;
+
+            debugMessages.Add("SUCCESS: Algorithm completed");
+            Debug = string.Join("\n", debugMessages);
         }
-
-        debugMessages.Add($"Panels created successfully");
-        debugMessages.Add("");
-
-        // Run algorithm
-        var algorithm = new BeamSawNestingAlgorithm(
-            SheetWidth,
-            SheetHeight,
-            sheetGrainDir,
-            Kerf,
-            cutOrient,
-            sortStrat
-        );
-
-        algorithm.Nest(panels);
-
-        var placed = algorithm.GetPlacedPanels();
-        var remaining = algorithm.GetRemainingSubSheets();
-        var cuts = algorithm.GetCutLines();
-        var sequence = algorithm.GetCutSequence();
-
-        debugMessages.Add($"=== NESTING RESULTS ===");
-        debugMessages.Add($"Sheets used: {algorithm.GetSheetCount()}");
-        debugMessages.Add($"Panels placed: {placed.Count} / {panels.Count}");
-        debugMessages.Add($"Overall efficiency: {algorithm.GetOverallEfficiency():F2}%");
-        debugMessages.Add($"Total cuts: {cuts.Count}");
-        debugMessages.Add("");
-
-        // Generate outputs
-        var placedRects = new List<Rectangle3d>();
-        var panelInfoList = new List<string>();
-
-        foreach (var p in placed)
+        catch (Exception ex)
         {
-            placedRects.Add(p.GetRectangle());
-            panelInfoList.Add($"Panel {p.Panel.Id}: " +
-                $"Pos=({p.X:F1},{p.Y:F1}), " +
-                $"Size={p.Width:F1}x{p.Height:F1}, " +
-                $"Rotation={p.RotationDegrees}°, " +
-                $"Grain={p.FinalGrainDirection}, " +
-                $"Sheet={p.SheetIndex}");
+            debugMessages.Add($"ERROR: {ex.Message}");
+            debugMessages.Add($"Stack trace: {ex.StackTrace}");
+            Debug = string.Join("\n", debugMessages);
         }
-
-        PlacedRectangles = placedRects;
-        PanelInfo = panelInfoList;
-
-        // Sheet rectangles
-        var sheetRects = new List<Rectangle3d>();
-        for (int i = 0; i < algorithm.GetSheetCount(); i++)
-        {
-            Plane plane = new Plane(new Point3d(0, 0, 0), Vector3d.ZAxis);
-            sheetRects.Add(new Rectangle3d(plane, SheetWidth, SheetHeight));
-        }
-        SheetRectangles = sheetRects;
-
-        // Cut lines
-        var cutLineGeometry = cuts.Select(c => c.GetLine()).ToList();
-        CutLines = cutLineGeometry;
-
-        // Kerf regions
-        var kerfRects = cuts.Select(c => c.GetKerfRectangle()).ToList();
-        KerfRegions = kerfRects;
-
-        // Remaining sub-sheets
-        var remainingRects = remaining.Select(r => r.GetRectangle()).ToList();
-        RemainingSheets = remainingRects;
-
-        // Cut sequence
-        var sequenceInfo = new List<string>();
-        foreach (var op in sequence)
-        {
-            sequenceInfo.Add($"Step {op.SequenceNumber}: {op.Description}");
-        }
-        CutSequence = sequenceInfo;
-
-        // Statistics
-        var stats = new List<string>();
-        stats.Add($"Total sheets: {algorithm.GetSheetCount()}");
-        stats.Add($"Panels placed: {placed.Count} / {panels.Count}");
-        stats.Add($"Total cuts: {cuts.Count}");
-        stats.Add($"Overall efficiency: {algorithm.GetOverallEfficiency():F2}%");
-
-        var utilization = algorithm.GetSheetUtilization();
-        for (int i = 0; i < utilization.Count; i++)
-        {
-            stats.Add($"Sheet {i} efficiency: {utilization[i]:F2}%");
-        }
-        Statistics = stats;
-
-        debugMessages.Add("SUCCESS: Algorithm completed");
-        Debug = string.Join("\n", debugMessages);
-    }
-    catch (Exception ex)
-    {
-        debugMessages.Add($"ERROR: {ex.Message}");
-        debugMessages.Add($"Stack trace: {ex.StackTrace}");
-        Debug = string.Join("\n", debugMessages);
     }
 }
