@@ -50,7 +50,9 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 #endregion
 
-#region Enumerations
+// ============================================================================
+// ENUMERATIONS
+// ============================================================================
 
 public enum RotationConstraint
 {
@@ -85,9 +87,9 @@ public enum PanelSortStrategy
     AreaAscending
 }
 
-#endregion
-
-#region Data Classes
+// ============================================================================
+// DATA CLASSES
+// ============================================================================
 
 public class Panel
 {
@@ -257,9 +259,9 @@ public class CutOperation
     }
 }
 
-#endregion
-
-#region Algorithm
+// ============================================================================
+// ALGORITHM
+// ============================================================================
 
 public class BeamSawNestingAlgorithm
 {
@@ -561,8 +563,6 @@ internal class PanelPlacement
     public double Height { get; set; }
     public string FinalGrainDirection { get; set; }
 }
-
-#endregion
 
 // ============================================================================
 // GRASSHOPPER SCRIPT INSTANCE
