@@ -21,14 +21,16 @@
  * ===== OUTPUTS (Right-click component → Manage Outputs) =====
  * Name              Type          Description
  * ----------------------------------------------------------------
- * PlacedRectangles  List          Rectangles showing placed panel positions
+ * PlacedRectangles  List          Rectangles showing placed panel positions (in grid layout)
  * PanelInfo         List          Detailed info for each placed panel
- * SheetRectangles   List          Sheet boundaries
- * CutLines          List          All guillotine cut lines
- * KerfRegions       List          Visual representation of kerf (material removed)
- * RemainingSheets   List          Unused sub-sheet rectangles
+ * SheetRectangles   List          Sheet boundaries (in grid layout)
+ * CutLines          List          All guillotine cut lines (in grid layout)
+ * KerfRegions       List          Visual representation of kerf (in grid layout)
+ * RemainingSheets   List          Unused sub-sheet rectangles (in grid layout)
  * CutSequence       List          Ordered cutting operations for manufacturing
  * Statistics        List          Summary statistics
+ * Transforms        List          Transformations from origin (0,0,0) to each panel position
+ * PanelTags         List          Text tags for each panel (Width x Height, ID)
  * A                 string        Debug messages and status
  *
  */
@@ -618,6 +620,8 @@ public class Script_Instance : GH_ScriptInstance
         ref object RemainingSheets,
         ref object CutSequence,
         ref object Statistics,
+        ref object Transforms,
+        ref object PanelTags,
         ref object A)
     {
         var debugMessages = new List<string>();
@@ -747,43 +751,114 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Total cuts: {cuts.Count}");
             debugMessages.Add("");
 
-            // Generate outputs
+            // Calculate grid layout for sheets
+            int sheetCount = algorithm.GetSheetCount();
+            int cols = (int)Math.Ceiling(Math.Sqrt(sheetCount));
+            double spacing = Math.Max(SheetWidth, SheetHeight) * 0.2; // 20% spacing between sheets
+
+            // Create sheet offset vectors for grid layout
+            var sheetOffsets = new Dictionary<int, Vector3d>();
+            for (int i = 0; i < sheetCount; i++)
+            {
+                int row = i / cols;
+                int col = i % cols;
+                double offsetX = col * (SheetWidth + spacing);
+                double offsetY = -row * (SheetHeight + spacing); // Negative Y to go down
+                sheetOffsets[i] = new Vector3d(offsetX, offsetY, 0);
+            }
+
+            // Generate outputs with grid layout
             var placedRects = new List<Rectangle3d>();
             var panelInfoList = new List<string>();
+            var transformList = new List<Transform>();
+            var panelTagList = new List<string>();
 
             foreach (var p in placed)
             {
-                placedRects.Add(p.GetRectangle());
+                // Get sheet offset for grid layout
+                Vector3d offset = sheetOffsets[p.SheetIndex];
+
+                // Create rectangle in grid position
+                Plane plane = new Plane(new Point3d(p.X + offset.X, p.Y + offset.Y, 0), Vector3d.ZAxis);
+                placedRects.Add(new Rectangle3d(plane, p.Width, p.Height));
+
+                // Panel info
                 panelInfoList.Add($"Panel {p.Panel.Id}: " +
                     $"Pos=({p.X:F1},{p.Y:F1}), " +
                     $"Size={p.Width:F1}x{p.Height:F1}, " +
                     $"Rotation={p.RotationDegrees}°, " +
                     $"Grain={p.FinalGrainDirection}, " +
                     $"Sheet={p.SheetIndex}");
+
+                // Create transformation from origin to final position
+                Transform transform = Transform.Translation(p.X + offset.X, p.Y + offset.Y, 0);
+                if (p.RotationDegrees != 0)
+                {
+                    // Apply rotation around panel center point
+                    Point3d center = new Point3d(
+                        p.X + p.Width / 2 + offset.X,
+                        p.Y + p.Height / 2 + offset.Y,
+                        0
+                    );
+                    Transform rotation = Transform.Rotation(
+                        Math.PI / 2 * (p.RotationDegrees / 90),
+                        Vector3d.ZAxis,
+                        center
+                    );
+                    transform = transform * rotation;
+                }
+                transformList.Add(transform);
+
+                // Create panel tag
+                panelTagList.Add($"{p.Width:F0}×{p.Height:F0} (#{p.Panel.Id})");
             }
 
             PlacedRectangles = placedRects;
             PanelInfo = panelInfoList;
+            Transforms = transformList;
+            PanelTags = panelTagList;
 
-            // Sheet rectangles
+            // Sheet rectangles in grid layout
             var sheetRects = new List<Rectangle3d>();
-            for (int i = 0; i < algorithm.GetSheetCount(); i++)
+            for (int i = 0; i < sheetCount; i++)
             {
-                Plane plane = new Plane(new Point3d(0, 0, 0), Vector3d.ZAxis);
+                Vector3d offset = sheetOffsets[i];
+                Plane plane = new Plane(new Point3d(offset.X, offset.Y, 0), Vector3d.ZAxis);
                 sheetRects.Add(new Rectangle3d(plane, SheetWidth, SheetHeight));
             }
             SheetRectangles = sheetRects;
 
-            // Cut lines
-            var cutLineGeometry = cuts.Select(c => c.GetLine()).ToList();
+            // Cut lines in grid layout
+            var cutLineGeometry = new List<Line>();
+            foreach (var c in cuts)
+            {
+                Vector3d offset = sheetOffsets[c.SheetIndex];
+                Line line = c.GetLine();
+                line.Transform(Transform.Translation(offset));
+                cutLineGeometry.Add(line);
+            }
             CutLines = cutLineGeometry;
 
-            // Kerf regions
-            var kerfRects = cuts.Select(c => c.GetKerfRectangle()).ToList();
+            // Kerf regions in grid layout
+            var kerfRects = new List<Rectangle3d>();
+            foreach (var c in cuts)
+            {
+                Vector3d offset = sheetOffsets[c.SheetIndex];
+                Rectangle3d kerfRect = c.GetKerfRectangle();
+                kerfRect.Transform(Transform.Translation(offset));
+                kerfRects.Add(kerfRect);
+            }
             KerfRegions = kerfRects;
 
-            // Remaining sub-sheets
-            var remainingRects = remaining.Select(r => r.GetRectangle()).ToList();
+            // Remaining sub-sheets in grid layout
+            var remainingRects = new List<Rectangle3d>();
+            foreach (var r in remaining)
+            {
+                Vector3d offset = sheetOffsets[r.SheetIndex];
+                Rectangle3d rect = r.GetRectangle();
+                rect.Transform(Transform.Translation(offset));
+                remainingRects.Add(rect);
+            }
             RemainingSheets = remainingRects;
 
             // Cut sequence
