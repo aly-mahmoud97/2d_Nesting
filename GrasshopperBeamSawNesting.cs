@@ -185,7 +185,9 @@ public class SubSheet
 
     public bool CanFit(double panelWidth, double panelHeight)
     {
-        return panelWidth <= Width + 1e-6 && panelHeight <= Height + 1e-6;
+        // Use negative tolerance to provide safety margin (panels must be slightly smaller)
+        const double TOLERANCE = 1e-6;
+        return panelWidth <= Width - TOLERANCE && panelHeight <= Height - TOLERANCE;
     }
 
     public SubSheet Clone()
@@ -277,6 +279,7 @@ public class BeamSawNestingAlgorithm
     private PanelSortStrategy sortStrategy;
 
     private List<PlacedPanel> placedPanels;
+    private List<Panel> failedPanels;
     private List<SubSheet> remainingSubSheets;
     private List<CutLine> cutLines;
     private List<CutOperation> cutSequence;
@@ -299,6 +302,7 @@ public class BeamSawNestingAlgorithm
         this.sortStrategy = sortStrategy;
 
         this.placedPanels = new List<PlacedPanel>();
+        this.failedPanels = new List<Panel>();
         this.remainingSubSheets = new List<SubSheet>();
         this.cutLines = new List<CutLine>();
         this.cutSequence = new List<CutOperation>();
@@ -322,7 +326,10 @@ public class BeamSawNestingAlgorithm
 
                 if (!placed)
                 {
-                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                    // Panel couldn't be placed - track as failure
+                    failedPanels.Add(panel);
+                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) could not be placed. " +
+                        $"Reason: Either too large for sheet ({sheetWidth}x{sheetHeight}) or grain constraints cannot be satisfied.");
                 }
             }
         }
@@ -416,7 +423,9 @@ public class BeamSawNestingAlgorithm
     private bool ValidateGrainDirection(Panel panel, bool rotated, out string finalGrainDir)
     {
         finalGrainDir = "";
-        bool isHorizontal = !rotated && panel.Width >= panel.Height || rotated && panel.Height >= panel.Width;
+        // Explicit parentheses for clarity and correctness
+        bool isHorizontal = (!rotated && panel.Width >= panel.Height) ||
+                           (rotated && panel.Height >= panel.Width);
 
         switch (panel.GrainDirection)
         {
@@ -446,6 +455,22 @@ public class BeamSawNestingAlgorithm
 
     private void PlacePanel(Panel panel, SubSheet subSheet, PanelPlacement placement)
     {
+        // Validate panel stays within sheet boundaries
+        const double TOLERANCE = 1e-6;
+        if (subSheet.X + placement.Width > sheetWidth + TOLERANCE)
+        {
+            throw new InvalidOperationException(
+                $"Panel placement exceeds sheet width: Panel at X={subSheet.X:F2} with width {placement.Width:F2} " +
+                $"extends to {subSheet.X + placement.Width:F2}, but sheet width is {sheetWidth:F2}");
+        }
+
+        if (subSheet.Y + placement.Height > sheetHeight + TOLERANCE)
+        {
+            throw new InvalidOperationException(
+                $"Panel placement exceeds sheet height: Panel at Y={subSheet.Y:F2} with height {placement.Height:F2} " +
+                $"extends to {subSheet.Y + placement.Height:F2}, but sheet height is {sheetHeight:F2}");
+        }
+
         var placed = new PlacedPanel(
             panel,
             subSheet.X,
@@ -466,47 +491,21 @@ public class BeamSawNestingAlgorithm
         double remainingWidth = subSheet.Width - usedWidth - kerfThickness;
         double remainingHeight = subSheet.Height - usedHeight - kerfThickness;
 
-        bool cutHorizontalFirst = preferredCutOrientation == CutOrientation.Horizontal;
+        // Determine cut orientation based on remaining space
+        bool cutVerticalFirst = preferredCutOrientation == CutOrientation.Vertical;
 
+        // Override based on which dimension has more remaining space
         if (Math.Abs(remainingWidth - remainingHeight) > 1e-6)
         {
-            cutHorizontalFirst = remainingHeight > remainingWidth;
+            cutVerticalFirst = remainingWidth > remainingHeight;
         }
 
-        if (cutHorizontalFirst)
+        // CORRECT GUILLOTINE CUTTING PATTERN:
+        // All cuts must extend completely through the material
+
+        if (cutVerticalFirst)
         {
-            if (remainingHeight > 1e-6)
-            {
-                double cutY = subSheet.Y + usedHeight;
-                var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
-                    subSheet.X, subSheet.X + subSheet.Width, kerfThickness, subSheet.SheetIndex, subSheet);
-                cutLines.Add(hCut);
-
-                var topSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
-                    subSheet.Width, remainingHeight, subSheet.Level + 1, hCut.Id, subSheet.SheetIndex);
-                remainingSubSheets.Add(topSheet);
-
-                cutSequence.Add(new CutOperation(cutSequence.Count + 1, hCut,
-                    $"Horizontal cut at Y={cutY:F2}", null, topSheet));
-            }
-
-            if (remainingWidth > 1e-6)
-            {
-                double cutX = subSheet.X + usedWidth;
-                var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
-                    subSheet.Y, subSheet.Y + usedHeight, kerfThickness, subSheet.SheetIndex, subSheet);
-                cutLines.Add(vCut);
-
-                var rightSheet = new SubSheet(cutX + kerfThickness, subSheet.Y,
-                    remainingWidth, usedHeight, subSheet.Level + 1, vCut.Id, subSheet.SheetIndex);
-                remainingSubSheets.Add(rightSheet);
-
-                cutSequence.Add(new CutOperation(cutSequence.Count + 1, vCut,
-                    $"Vertical cut at X={cutX:F2}", rightSheet, null));
-            }
-        }
-        else
-        {
+            // VERTICAL-FIRST: Full height cut, then horizontal on left piece
             if (remainingWidth > 1e-6)
             {
                 double cutX = subSheet.X + usedWidth;
@@ -519,7 +518,7 @@ public class BeamSawNestingAlgorithm
                 remainingSubSheets.Add(rightSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, vCut,
-                    $"Vertical cut at X={cutX:F2}", rightSheet, null));
+                    $"Vertical guillotine cut at X={cutX:F2} (full height)", rightSheet, null));
             }
 
             if (remainingHeight > 1e-6)
@@ -529,17 +528,51 @@ public class BeamSawNestingAlgorithm
                     subSheet.X, subSheet.X + usedWidth, kerfThickness, subSheet.SheetIndex, subSheet);
                 cutLines.Add(hCut);
 
-                var topSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
+                var topLeftSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
                     usedWidth, remainingHeight, subSheet.Level + 1, hCut.Id, subSheet.SheetIndex);
+                remainingSubSheets.Add(topLeftSheet);
+
+                cutSequence.Add(new CutOperation(cutSequence.Count + 1, hCut,
+                    $"Horizontal guillotine cut at Y={cutY:F2} (left piece)", null, topLeftSheet));
+            }
+        }
+        else
+        {
+            // HORIZONTAL-FIRST: Full width cut, then vertical on bottom piece
+            if (remainingHeight > 1e-6)
+            {
+                double cutY = subSheet.Y + usedHeight;
+                var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
+                    subSheet.X, subSheet.X + subSheet.Width, kerfThickness, subSheet.SheetIndex, subSheet);
+                cutLines.Add(hCut);
+
+                var topSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
+                    subSheet.Width, remainingHeight, subSheet.Level + 1, hCut.Id, subSheet.SheetIndex);
                 remainingSubSheets.Add(topSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, hCut,
-                    $"Horizontal cut at Y={cutY:F2}", null, topSheet));
+                    $"Horizontal guillotine cut at Y={cutY:F2} (full width)", null, topSheet));
+            }
+
+            if (remainingWidth > 1e-6)
+            {
+                double cutX = subSheet.X + usedWidth;
+                var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
+                    subSheet.Y, subSheet.Y + usedHeight, kerfThickness, subSheet.SheetIndex, subSheet);
+                cutLines.Add(vCut);
+
+                var bottomRightSheet = new SubSheet(cutX + kerfThickness, subSheet.Y,
+                    remainingWidth, usedHeight, subSheet.Level + 1, vCut.Id, subSheet.SheetIndex);
+                remainingSubSheets.Add(bottomRightSheet);
+
+                cutSequence.Add(new CutOperation(cutSequence.Count + 1, vCut,
+                    $"Vertical guillotine cut at X={cutX:F2} (bottom piece)", bottomRightSheet, null));
             }
         }
     }
 
     public List<PlacedPanel> GetPlacedPanels() => placedPanels;
+    public List<Panel> GetFailedPanels() => failedPanels;
     public List<SubSheet> GetRemainingSubSheets() => remainingSubSheets;
     public List<CutLine> GetCutLines() => cutLines;
     public List<CutOperation> GetCutSequence() => cutSequence;
