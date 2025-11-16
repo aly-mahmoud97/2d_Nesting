@@ -4,19 +4,19 @@
  * Copy this entire script into a C# Script component in Grasshopper
  *
  * ===== INPUTS (Right-click component → Manage Inputs) =====
- * Name              Type          Description
+ * Name                 Type          Description
  * ----------------------------------------------------------------
- * SheetWidth        double        Width of the sheet material
- * SheetHeight       double        Height of the sheet material
- * SheetGrain        string        "Horizontal" or "Vertical"
- * PanelWidths       List<double>  List of panel widths
- * PanelHeights      List<double>  List of panel heights
- * RotationAllowed   List<bool>    Can each panel rotate 90°? (optional, default: all true)
- * PanelGrains       List<string>  Grain per panel: "MatchSheet", "FixedHorizontal", "FixedVertical" (optional)
- * Kerf              double        Saw blade thickness (default: 5.0)
- * CutOrientation    string        "Horizontal" or "Vertical" - preferred first cut (optional)
- * SortStrategy      string        "LargestFirst", "SmallestFirst", "AreaDescending", "AreaAscending" (optional)
- * Run               bool          Set to true to run the algorithm
+ * SheetWidth           double        Width of the sheet material
+ * SheetHeight          double        Height of the sheet material
+ * SheetGrain           string        "Horizontal" or "Vertical"
+ * PanelWidths          List<double>  List of panel widths
+ * PanelHeights         List<double>  List of panel heights
+ * RotationAllowed      List<bool>    Can each panel rotate 90°? (optional, default: all true)
+ * PanelGrains          List<string>  Grain per panel: "MatchSheet", "FixedHorizontal", "FixedVertical" (optional)
+ * Kerf                 double        Saw blade thickness (default: 5.0)
+ * CutOrientationPref   string        "Horizontal" or "Vertical" - preferred first cut (optional)
+ * SortStrategy         string        "LargestFirst", "SmallestFirst", "AreaDescending", "AreaAscending" (optional)
+ * Run                  bool          Set to true to run the algorithm
  *
  * ===== OUTPUTS (Right-click component → Manage Outputs) =====
  * Name              Type          Description
@@ -29,7 +29,7 @@
  * RemainingSheets   List          Unused sub-sheet rectangles
  * CutSequence       List          Ordered cutting operations for manufacturing
  * Statistics        List          Summary statistics
- * Debug             string        Debug messages
+ * A                 string        Debug messages and status
  *
  */
 
@@ -595,7 +595,7 @@ public class Script_Instance : GH_ScriptInstance
         List<bool> RotationAllowed,
         List<string> PanelGrains,
         double Kerf,
-        string CutOrientation,
+        string CutOrientationPref,
         string SortStrategy,
         bool Run,
         ref object PlacedRectangles,
@@ -606,7 +606,7 @@ public class Script_Instance : GH_ScriptInstance
         ref object RemainingSheets,
         ref object CutSequence,
         ref object Statistics,
-        ref object Debug)
+        ref object A)
     {
         var debugMessages = new List<string>();
 
@@ -614,32 +614,32 @@ public class Script_Instance : GH_ScriptInstance
         {
             if (!Run)
             {
-                Debug = "Set 'Run' to true to execute the algorithm";
+                A = "Set 'Run' to true to execute the algorithm";
                 return;
             }
 
             // Validate inputs
             if (PanelWidths == null || PanelHeights == null || PanelWidths.Count == 0)
             {
-                Debug = "ERROR: PanelWidths and PanelHeights are required";
+                A = "ERROR: PanelWidths and PanelHeights are required";
                 return;
             }
 
             if (PanelWidths.Count != PanelHeights.Count)
             {
-                Debug = "ERROR: PanelWidths and PanelHeights must have the same count";
+                A = "ERROR: PanelWidths and PanelHeights must have the same count";
                 return;
             }
 
             if (SheetWidth <= 0 || SheetHeight <= 0)
             {
-                Debug = "ERROR: SheetWidth and SheetHeight must be positive";
+                A = "ERROR: SheetWidth and SheetHeight must be positive";
                 return;
             }
 
             if (Kerf < 0)
             {
-                Debug = "ERROR: Kerf cannot be negative";
+                A = "ERROR: Kerf cannot be negative";
                 return;
             }
 
@@ -659,9 +659,9 @@ public class Script_Instance : GH_ScriptInstance
 
             // Parse cut orientation preference
             CutOrientation cutOrient = CutOrientation.Horizontal;
-            if (!string.IsNullOrEmpty(CutOrientation))
+            if (!string.IsNullOrEmpty(CutOrientationPref))
             {
-                if (CutOrientation.ToLower() == "vertical")
+                if (CutOrientationPref.ToLower() == "vertical")
                     cutOrient = CutOrientation.Vertical;
             }
 
@@ -797,13 +797,13 @@ public class Script_Instance : GH_ScriptInstance
             Statistics = stats;
 
             debugMessages.Add("SUCCESS: Algorithm completed");
-            Debug = string.Join("\n", debugMessages);
+            A = string.Join("\n", debugMessages);
         }
         catch (Exception ex)
         {
             debugMessages.Add($"ERROR: {ex.Message}");
             debugMessages.Add($"Stack trace: {ex.StackTrace}");
-            Debug = string.Join("\n", debugMessages);
+            A = string.Join("\n", debugMessages);
         }
     }
 }
