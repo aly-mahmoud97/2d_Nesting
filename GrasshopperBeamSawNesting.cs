@@ -360,9 +360,10 @@ public class BeamSawNestingAlgorithm
     private bool TryPlacePanel(Panel panel)
     {
         // Only consider sub-sheets from the CURRENT sheet
+        // Use largest-first to reduce fragmentation, especially when rotation is constrained
         var currentSheetSubSheets = remainingSubSheets
             .Where(s => s.SheetIndex == currentSheetIndex)
-            .OrderBy(s => s.Area)
+            .OrderByDescending(s => s.Area)
             .ToList();
 
         foreach (var subSheet in currentSheetSubSheets)
@@ -416,7 +417,7 @@ public class BeamSawNestingAlgorithm
     private bool ValidateGrainDirection(Panel panel, bool rotated, out string finalGrainDir)
     {
         finalGrainDir = "";
-        bool isHorizontal = !rotated && panel.Width >= panel.Height || rotated && panel.Height >= panel.Width;
+        bool isHorizontal = (!rotated && panel.Width >= panel.Height) || (rotated && panel.Height >= panel.Width);
 
         switch (panel.GrainDirection)
         {
@@ -466,6 +467,9 @@ public class BeamSawNestingAlgorithm
         double remainingWidth = subSheet.Width - usedWidth - kerfThickness;
         double remainingHeight = subSheet.Height - usedHeight - kerfThickness;
 
+        // Minimum viable size: kerf thickness + 10mm practical minimum
+        double minViableSize = kerfThickness + 10.0;
+
         bool cutHorizontalFirst = preferredCutOrientation == CutOrientation.Horizontal;
 
         if (Math.Abs(remainingWidth - remainingHeight) > 1e-6)
@@ -475,7 +479,7 @@ public class BeamSawNestingAlgorithm
 
         if (cutHorizontalFirst)
         {
-            if (remainingHeight > 1e-6)
+            if (remainingHeight > minViableSize)
             {
                 double cutY = subSheet.Y + usedHeight;
                 var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
@@ -490,7 +494,7 @@ public class BeamSawNestingAlgorithm
                     $"Horizontal cut at Y={cutY:F2}", null, topSheet));
             }
 
-            if (remainingWidth > 1e-6)
+            if (remainingWidth > minViableSize)
             {
                 double cutX = subSheet.X + usedWidth;
                 var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
@@ -507,7 +511,7 @@ public class BeamSawNestingAlgorithm
         }
         else
         {
-            if (remainingWidth > 1e-6)
+            if (remainingWidth > minViableSize)
             {
                 double cutX = subSheet.X + usedWidth;
                 var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
@@ -522,7 +526,7 @@ public class BeamSawNestingAlgorithm
                     $"Vertical cut at X={cutX:F2}", rightSheet, null));
             }
 
-            if (remainingHeight > 1e-6)
+            if (remainingHeight > minViableSize)
             {
                 double cutY = subSheet.Y + usedHeight;
                 var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
