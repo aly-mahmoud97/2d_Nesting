@@ -744,6 +744,24 @@ public class Script_Instance : GH_ScriptInstance
             var cuts = algorithm.GetCutLines();
             var sequence = algorithm.GetCutSequence();
 
+            // Sort placed panels after nesting (by sheet index, then Y descending, then X)
+            placed = placed
+                .OrderBy(p => p.SheetIndex)
+                .ThenByDescending(p => p.Y)
+                .ThenBy(p => p.X)
+                .ToList();
+
+            // Calculate quantities for panels with same dimensions
+            var panelQuantities = new Dictionary<string, int>();
+            foreach (var p in placed)
+            {
+                string key = $"{p.Width:F2}×{p.Height:F2}";
+                if (panelQuantities.ContainsKey(key))
+                    panelQuantities[key]++;
+                else
+                    panelQuantities[key] = 1;
+            }
+
             debugMessages.Add($"=== NESTING RESULTS ===");
             debugMessages.Add($"Sheets used: {algorithm.GetSheetCount()}");
             debugMessages.Add($"Panels placed: {placed.Count} / {panels.Count}");
@@ -809,8 +827,10 @@ public class Script_Instance : GH_ScriptInstance
                 }
                 transformList.Add(transform);
 
-                // Create panel tag
-                panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
+                // Create panel tag with quantity information
+                string dimensionKey = $"{p.Width:F2}×{p.Height:F2}";
+                int quantity = panelQuantities.ContainsKey(dimensionKey) ? panelQuantities[dimensionKey] : 1;
+                panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id}) Qty:{quantity}");
             }
 
             PlacedRectangles = placedRects;
