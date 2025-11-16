@@ -160,8 +160,9 @@ public class SubSheet
     public double Height { get; set; }
     public int Level { get; set; }
     public int ParentCutId { get; set; }
+    public int SheetIndex { get; set; }  // Track which sheet this sub-sheet belongs to
 
-    public SubSheet(double x, double y, double width, double height, int level = 0, int parentCutId = -1)
+    public SubSheet(double x, double y, double width, double height, int level = 0, int parentCutId = -1, int sheetIndex = 0)
     {
         X = x;
         Y = y;
@@ -169,6 +170,7 @@ public class SubSheet
         Height = height;
         Level = level;
         ParentCutId = parentCutId;
+        SheetIndex = sheetIndex;
     }
 
     public double Area => Width * Height;
@@ -186,7 +188,7 @@ public class SubSheet
 
     public SubSheet Clone()
     {
-        return new SubSheet(X, Y, Width, Height, Level, ParentCutId);
+        return new SubSheet(X, Y, Width, Height, Level, ParentCutId, SheetIndex);
     }
 }
 
@@ -343,15 +345,25 @@ public class BeamSawNestingAlgorithm
 
     private void AddNewSheet()
     {
-        SubSheet newSheet = new SubSheet(0, 0, sheetWidth, sheetHeight, 0, -1);
+        // Increment sheet index for all sheets after the first one
+        if (remainingSubSheets.Count > 0 || placedPanels.Count > 0)
+        {
+            currentSheetIndex++;
+        }
+
+        SubSheet newSheet = new SubSheet(0, 0, sheetWidth, sheetHeight, 0, -1, currentSheetIndex);
         remainingSubSheets.Add(newSheet);
     }
 
     private bool TryPlacePanel(Panel panel)
     {
-        var sortedSubSheets = remainingSubSheets.OrderBy(s => s.Area).ToList();
+        // Only consider sub-sheets from the CURRENT sheet
+        var currentSheetSubSheets = remainingSubSheets
+            .Where(s => s.SheetIndex == currentSheetIndex)
+            .OrderBy(s => s.Area)
+            .ToList();
 
-        foreach (var subSheet in sortedSubSheets)
+        foreach (var subSheet in currentSheetSubSheets)
         {
             if (CanPlacePanelInSubSheet(panel, subSheet, false, out var placement1))
             {
@@ -440,7 +452,7 @@ public class BeamSawNestingAlgorithm
             placement.Height,
             placement.Rotated ? 90 : 0,
             placement.FinalGrainDirection,
-            currentSheetIndex
+            subSheet.SheetIndex  // Use the sub-sheet's sheet index, not currentSheetIndex
         );
         placedPanels.Add(placed);
         remainingSubSheets.Remove(subSheet);
@@ -465,11 +477,11 @@ public class BeamSawNestingAlgorithm
             {
                 double cutY = subSheet.Y + usedHeight;
                 var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
-                    subSheet.X, subSheet.X + subSheet.Width, kerfThickness, currentSheetIndex, subSheet);
+                    subSheet.X, subSheet.X + subSheet.Width, kerfThickness, subSheet.SheetIndex, subSheet);
                 cutLines.Add(hCut);
 
                 var topSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
-                    subSheet.Width, remainingHeight, subSheet.Level + 1, hCut.Id);
+                    subSheet.Width, remainingHeight, subSheet.Level + 1, hCut.Id, subSheet.SheetIndex);
                 remainingSubSheets.Add(topSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, hCut,
@@ -480,11 +492,11 @@ public class BeamSawNestingAlgorithm
             {
                 double cutX = subSheet.X + usedWidth;
                 var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
-                    subSheet.Y, subSheet.Y + usedHeight, kerfThickness, currentSheetIndex, subSheet);
+                    subSheet.Y, subSheet.Y + usedHeight, kerfThickness, subSheet.SheetIndex, subSheet);
                 cutLines.Add(vCut);
 
                 var rightSheet = new SubSheet(cutX + kerfThickness, subSheet.Y,
-                    remainingWidth, usedHeight, subSheet.Level + 1, vCut.Id);
+                    remainingWidth, usedHeight, subSheet.Level + 1, vCut.Id, subSheet.SheetIndex);
                 remainingSubSheets.Add(rightSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, vCut,
@@ -497,11 +509,11 @@ public class BeamSawNestingAlgorithm
             {
                 double cutX = subSheet.X + usedWidth;
                 var vCut = new CutLine(nextCutId++, CutOrientation.Vertical, cutX,
-                    subSheet.Y, subSheet.Y + subSheet.Height, kerfThickness, currentSheetIndex, subSheet);
+                    subSheet.Y, subSheet.Y + subSheet.Height, kerfThickness, subSheet.SheetIndex, subSheet);
                 cutLines.Add(vCut);
 
                 var rightSheet = new SubSheet(cutX + kerfThickness, subSheet.Y,
-                    remainingWidth, subSheet.Height, subSheet.Level + 1, vCut.Id);
+                    remainingWidth, subSheet.Height, subSheet.Level + 1, vCut.Id, subSheet.SheetIndex);
                 remainingSubSheets.Add(rightSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, vCut,
@@ -512,11 +524,11 @@ public class BeamSawNestingAlgorithm
             {
                 double cutY = subSheet.Y + usedHeight;
                 var hCut = new CutLine(nextCutId++, CutOrientation.Horizontal, cutY,
-                    subSheet.X, subSheet.X + usedWidth, kerfThickness, currentSheetIndex, subSheet);
+                    subSheet.X, subSheet.X + usedWidth, kerfThickness, subSheet.SheetIndex, subSheet);
                 cutLines.Add(hCut);
 
                 var topSheet = new SubSheet(subSheet.X, cutY + kerfThickness,
-                    usedWidth, remainingHeight, subSheet.Level + 1, hCut.Id);
+                    usedWidth, remainingHeight, subSheet.Level + 1, hCut.Id, subSheet.SheetIndex);
                 remainingSubSheets.Add(topSheet);
 
                 cutSequence.Add(new CutOperation(cutSequence.Count + 1, hCut,
