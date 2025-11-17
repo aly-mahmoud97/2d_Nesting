@@ -642,7 +642,8 @@ namespace PolylineNesting
             boxA.Inflate(_spacing / 2.0);
             boxB.Inflate(_spacing / 2.0);
 
-            if (!boxA.Intersects(boxB))
+            // Check if bounding boxes overlap
+            if (!BoundingBoxesOverlap(boxA, boxB))
                 return false;
 
             Polyline polyA = a.TransformedGeometry;
@@ -695,6 +696,14 @@ namespace PolylineNesting
             }
 
             return (intersections % 2) == 1;
+        }
+
+        private bool BoundingBoxesOverlap(BoundingBox a, BoundingBox b)
+        {
+            // Check if bounding boxes overlap in all three dimensions
+            return !(a.Max.X < b.Min.X || a.Min.X > b.Max.X ||
+                     a.Max.Y < b.Min.Y || a.Min.Y > b.Max.Y ||
+                     a.Max.Z < b.Min.Z || a.Min.Z > b.Max.Z);
         }
 
         #endregion
