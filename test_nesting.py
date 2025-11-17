@@ -400,8 +400,8 @@ def run_test():
     sheet_grain = SheetGrainDirection.HORIZONTAL
     kerf = 0.005
 
-    panel_widths = [1.294, 1.258, 0.54, 1.594, 1.576, 0.54, 0.54, 0.512, 0.372587]
-    panel_heights = [0.54, 0.1, 0.452, 0.54, 0.1, 0.452, 0.452, 0.372587, 0.512]
+    panel_widths = [0.54, 0.1, 0.452, 0.54, 0.1, 0.452, 0.452, 0.372587, 0.512]
+    panel_heights = [1.294, 1.258, 0.54, 1.594, 1.576, 0.54, 0.54, 0.512, 0.372587]
     rotation_allowed = [False] * 9
 
     print(f"Sheet Size: {sheet_width} x {sheet_height}")
