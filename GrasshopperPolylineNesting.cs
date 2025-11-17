@@ -113,7 +113,7 @@ namespace PolylineNesting
         public double MaxDimension => Math.Max(BoundingBox.Max.X - BoundingBox.Min.X,
                                                BoundingBox.Max.Y - BoundingBox.Min.Y);
 
-        private double CalculateArea()
+        double CalculateArea()
         {
             double area = 0;
             for (int i = 0; i < Geometry.Count - 1; i++)
@@ -143,7 +143,7 @@ namespace PolylineNesting
             BoundingBox = TransformedGeometry.BoundingBox;
         }
 
-        private Polyline ComputeTransformedGeometry()
+        Polyline ComputeTransformedGeometry()
         {
             Polyline result = Item.Geometry.Duplicate();
 
@@ -427,13 +427,13 @@ namespace PolylineNesting
 
         #region Private Methods
 
-        private void AddNewSheet()
+        void AddNewSheet()
         {
             _sheets.Add(new NestingSheet(_currentSheetIndex, _sheetWidth, _sheetHeight));
             _currentSheetIndex = _sheets.Count - 1;
         }
 
-        private List<PolylineItem> SortItems(List<PolylineItem> items)
+        List<PolylineItem> SortItems(List<PolylineItem> items)
         {
             switch (_sortStrategy)
             {
@@ -452,7 +452,7 @@ namespace PolylineNesting
             }
         }
 
-        private bool TryPlaceItem(PolylineItem item)
+        bool TryPlaceItem(PolylineItem item)
         {
             NestingSheet currentSheet = _sheets[_currentSheetIndex];
             List<double> rotations = GetRotationAngles(item.AllowedRotation);
@@ -473,7 +473,7 @@ namespace PolylineNesting
             return false;
         }
 
-        private List<double> GetRotationAngles(RotationMode mode)
+        List<double> GetRotationAngles(RotationMode mode)
         {
             List<double> angles = new List<double>();
 
@@ -501,7 +501,7 @@ namespace PolylineNesting
             return angles;
         }
 
-        private Point3d? FindValidPosition(PolylineItem item, double rotation, NestingSheet sheet)
+        Point3d? FindValidPosition(PolylineItem item, double rotation, NestingSheet sheet)
         {
             PlacedPolyline test = new PlacedPolyline(item, Point3d.Origin, rotation, sheet.Index);
             double width = test.BoundingBox.Max.X - test.BoundingBox.Min.X;
@@ -523,7 +523,7 @@ namespace PolylineNesting
             }
         }
 
-        private Point3d? FindPositionBottomLeft(PolylineItem item, double rotation, NestingSheet sheet)
+        Point3d? FindPositionBottomLeft(PolylineItem item, double rotation, NestingSheet sheet)
         {
             PlacedPolyline temp = new PlacedPolyline(item, Point3d.Origin, rotation, sheet.Index);
             double width = temp.BoundingBox.Max.X - temp.BoundingBox.Min.X;
@@ -547,7 +547,7 @@ namespace PolylineNesting
             return null;
         }
 
-        private Point3d? FindPositionBestFit(PolylineItem item, double rotation, NestingSheet sheet)
+        Point3d? FindPositionBestFit(PolylineItem item, double rotation, NestingSheet sheet)
         {
             Point3d? bestPosition = FindPositionBottomLeft(item, rotation, sheet);
 
@@ -583,7 +583,7 @@ namespace PolylineNesting
             return bestPosition;
         }
 
-        private Point3d? FindPositionGrid(PolylineItem item, double rotation, NestingSheet sheet)
+        Point3d? FindPositionGrid(PolylineItem item, double rotation, NestingSheet sheet)
         {
             double sheetOffsetX = sheet.Index * (_sheetWidth + 100);
             double cellSize = 100;
@@ -610,7 +610,7 @@ namespace PolylineNesting
             return null;
         }
 
-        private bool IsValidPosition(PolylineItem item, Point3d position, double rotation, NestingSheet sheet)
+        bool IsValidPosition(PolylineItem item, Point3d position, double rotation, NestingSheet sheet)
         {
             PlacedPolyline test = new PlacedPolyline(item, position, rotation, sheet.Index);
 
@@ -634,7 +634,7 @@ namespace PolylineNesting
             return true;
         }
 
-        private bool HasCollision(PlacedPolyline a, PlacedPolyline b)
+        bool HasCollision(PlacedPolyline a, PlacedPolyline b)
         {
             BoundingBox boxA = a.BoundingBox;
             BoundingBox boxB = b.BoundingBox;
@@ -676,7 +676,7 @@ namespace PolylineNesting
             return false;
         }
 
-        private bool IsPointInside(Point3d point, Polyline polyline)
+        bool IsPointInside(Point3d point, Polyline polyline)
         {
             int intersections = 0;
 
@@ -698,7 +698,7 @@ namespace PolylineNesting
             return (intersections % 2) == 1;
         }
 
-        private bool BoundingBoxesOverlap(BoundingBox a, BoundingBox b)
+        bool BoundingBoxesOverlap(BoundingBox a, BoundingBox b)
         {
             // Check if bounding boxes overlap in all three dimensions
             return !(a.Max.X < b.Min.X || a.Min.X > b.Max.X ||
@@ -716,7 +716,7 @@ namespace PolylineNesting
 // MAIN GRASSHOPPER COMPONENT CODE
 // ============================================================================
 
-private void RunScript(
+void RunScript(
     List<Polyline> Polylines,
     double SheetWidth,
     double SheetHeight,
@@ -828,7 +828,7 @@ private void RunScript(
 /// <summary>
 /// Generates distinct colors for polylines using golden ratio
 /// </summary>
-private List<Color> GenerateColors(List<PlacedPolyline> placed)
+List<Color> GenerateColors(List<PlacedPolyline> placed)
 {
     List<Color> colors = new List<Color>();
     double goldenRatio = 0.618033988749895;
@@ -850,7 +850,7 @@ private List<Color> GenerateColors(List<PlacedPolyline> placed)
 /// <summary>
 /// Converts HSV color to RGB
 /// </summary>
-private Color HSVToRGB(double h, double s, double v)
+Color HSVToRGB(double h, double s, double v)
 {
     int hi = Convert.ToInt32(Math.Floor(h * 6)) % 6;
     double f = h * 6 - Math.Floor(h * 6);
