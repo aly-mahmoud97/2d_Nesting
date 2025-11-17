@@ -31,6 +31,7 @@
  * Statistics        List          Summary statistics
  * Transforms        List          Transformations from origin (0,0,0) to each panel position
  * PanelTags         List          Text tags for each panel (Width x Height, ID)
+ * PanelColors       List          Colors assigned to panels grouped by dimensions
  * A                 string        Debug messages and status
  *
  */
@@ -683,6 +684,7 @@ public class Script_Instance : GH_ScriptInstance
         ref object Statistics,
         ref object Transforms,
         ref object PanelTags,
+        ref object PanelColors,
         ref object A)
     {
         var debugMessages = new List<string>();
@@ -886,10 +888,36 @@ public class Script_Instance : GH_ScriptInstance
                 panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
             }
 
+            // Generate colors based on panel dimensions
+            var panelColorList = new List<Color>();
+            var dimensionGroups = new Dictionary<string, int>(); // dimension key -> color index
+            var colorPalette = GenerateColorPalette(50); // Generate palette with up to 50 distinct colors
+            int currentColorIndex = 0;
+            const double tolerance = 0.1; // Tolerance for comparing dimensions (in mm)
+
+            foreach (var p in placed)
+            {
+                // Create a dimension key (round to nearest 0.1mm to group similar sizes)
+                double w = Math.Round(p.Panel.Width / tolerance) * tolerance;
+                double h = Math.Round(p.Panel.Height / tolerance) * tolerance;
+                // Normalize the key so that WxH and HxW get the same color
+                string dimKey = w <= h ? $"{w:F1}x{h:F1}" : $"{h:F1}x{w:F1}";
+
+                // Assign color index for this dimension group
+                if (!dimensionGroups.ContainsKey(dimKey))
+                {
+                    dimensionGroups[dimKey] = currentColorIndex % colorPalette.Count;
+                    currentColorIndex++;
+                }
+
+                panelColorList.Add(colorPalette[dimensionGroups[dimKey]]);
+            }
+
             PlacedRectangles = placedRects;
             PanelInfo = panelInfoList;
             Transforms = transformList;
             PanelTags = panelTagList;
+            PanelColors = panelColorList;
 
             // Sheet rectangles in grid layout
             var sheetRects = new List<Rectangle3d>();
@@ -973,5 +1001,74 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Stack trace: {ex.StackTrace}");
             A = string.Join("\n", debugMessages);
         }
+    }
+
+    /// <summary>
+    /// Generate a palette of visually distinct colors using HSV color space
+    /// </summary>
+    private List<Color> GenerateColorPalette(int count)
+    {
+        var colors = new List<Color>();
+
+        // Use golden ratio for hue distribution to maximize color distinction
+        double goldenRatioConjugate = 0.618033988749895;
+        double hue = 0.0;
+
+        for (int i = 0; i < count; i++)
+        {
+            // Vary saturation and value to create more distinct colors
+            double saturation = 0.7 + (i % 3) * 0.1; // 0.7, 0.8, 0.9
+            double value = 0.8 + (i % 2) * 0.15;     // 0.8, 0.95
+
+            Color color = HSVToRGB(hue, saturation, value);
+            colors.Add(color);
+
+            hue += goldenRatioConjugate;
+            hue = hue % 1.0; // Keep hue in [0, 1] range
+        }
+
+        return colors;
+    }
+
+    /// <summary>
+    /// Convert HSV color to RGB
+    /// </summary>
+    private Color HSVToRGB(double h, double s, double v)
+    {
+        h = h % 1.0;
+        int hi = (int)(h * 6);
+        double f = h * 6 - hi;
+        double p = v * (1 - s);
+        double q = v * (1 - f * s);
+        double t = v * (1 - (1 - f) * s);
+
+        double r, g, b;
+        switch (hi)
+        {
+            case 0:
+                r = v; g = t; b = p;
+                break;
+            case 1:
+                r = q; g = v; b = p;
+                break;
+            case 2:
+                r = p; g = v; b = t;
+                break;
+            case 3:
+                r = p; g = q; b = v;
+                break;
+            case 4:
+                r = t; g = p; b = v;
+                break;
+            default:
+                r = v; g = p; b = q;
+                break;
+        }
+
+        return Color.FromArgb(
+            (int)(r * 255),
+            (int)(g * 255),
+            (int)(b * 255)
+        );
     }
 }
