@@ -31,6 +31,7 @@
  * Statistics        List          Summary statistics
  * Transforms        List          Transformations from origin (0,0,0) to each panel position
  * PanelTags         List          Text tags for each panel (Width x Height, ID)
+ * PanelTagPlanes    List          3D planes for positioning text tags at panel centers
  * A                 string        Debug messages and status
  *
  */
@@ -622,6 +623,7 @@ public class Script_Instance : GH_ScriptInstance
         ref object Statistics,
         ref object Transforms,
         ref object PanelTags,
+        ref object PanelTagPlanes,
         ref object A)
     {
         var debugMessages = new List<string>();
@@ -772,6 +774,7 @@ public class Script_Instance : GH_ScriptInstance
             var panelInfoList = new List<string>();
             var transformList = new List<Transform>();
             var panelTagList = new List<string>();
+            var panelTagPlaneList = new List<Plane>();
 
             foreach (var p in placed)
             {
@@ -811,12 +814,22 @@ public class Script_Instance : GH_ScriptInstance
 
                 // Create panel tag
                 panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
+
+                // Create plane for panel tag positioning (at panel center)
+                Point3d tagPosition = new Point3d(
+                    p.X + p.Width / 2 + offset.X,
+                    p.Y + p.Height / 2 + offset.Y,
+                    0
+                );
+                Plane tagPlane = new Plane(tagPosition, Vector3d.ZAxis);
+                panelTagPlaneList.Add(tagPlane);
             }
 
             PlacedRectangles = placedRects;
             PanelInfo = panelInfoList;
             Transforms = transformList;
             PanelTags = panelTagList;
+            PanelTagPlanes = panelTagPlaneList;
 
             // Sheet rectangles in grid layout
             var sheetRects = new List<Rectangle3d>();
