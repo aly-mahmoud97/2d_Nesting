@@ -280,6 +280,7 @@ public class BeamSawNestingAlgorithm
     private List<SubSheet> remainingSubSheets;
     private List<CutLine> cutLines;
     private List<CutOperation> cutSequence;
+    private List<string> warnings;
     private int currentSheetIndex;
     private int nextCutId;
 
@@ -302,6 +303,7 @@ public class BeamSawNestingAlgorithm
         this.remainingSubSheets = new List<SubSheet>();
         this.cutLines = new List<CutLine>();
         this.cutSequence = new List<CutOperation>();
+        this.warnings = new List<string>();
         this.currentSheetIndex = 0;
         this.nextCutId = 0;
     }
@@ -322,7 +324,11 @@ public class BeamSawNestingAlgorithm
 
                 if (!placed)
                 {
-                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                    // Panel could not be placed - determine why and add warning
+                    string reason = DetermineFailureReason(panel);
+                    string warningMsg = $"WARNING: Panel {(string.IsNullOrEmpty(panel.Tag) ? panel.Id.ToString() : panel.Tag)} " +
+                                      $"({panel.Width:F1}mm x {panel.Height:F1}mm) could not be nested - {reason}";
+                    warnings.Add(warningMsg);
                 }
             }
         }
@@ -444,6 +450,60 @@ public class BeamSawNestingAlgorithm
         return true;
     }
 
+    private string DetermineFailureReason(Panel panel)
+    {
+        // Check if panel is too large for sheet (even with rotation if allowed)
+        bool fitsWithoutRotation = panel.Width <= sheetWidth && panel.Height <= sheetHeight;
+        bool fitsWithRotation = panel.Height <= sheetWidth && panel.Width <= sheetHeight;
+
+        if (!fitsWithoutRotation && !fitsWithRotation)
+        {
+            return $"panel dimensions exceed sheet size ({sheetWidth:F1}mm x {sheetHeight:F1}mm)";
+        }
+
+        // Check grain direction constraints
+        string grainDir;
+        bool grainOkWithoutRotation = ValidateGrainDirection(panel, false, out grainDir);
+        bool grainOkWithRotation = ValidateGrainDirection(panel, true, out grainDir);
+
+        // If rotation is not allowed and grain fails
+        if (panel.RotationConstraint == RotationConstraint.NoRotation)
+        {
+            if (!grainOkWithoutRotation)
+            {
+                string grainType = panel.GrainDirection == PanelGrainDirection.MatchSheet ?
+                    "must match sheet grain" :
+                    panel.GrainDirection == PanelGrainDirection.FixedHorizontal ?
+                    "must be horizontal" : "must be vertical";
+                return $"grain direction constraint not met ({grainType}) and rotation not allowed";
+            }
+
+            if (fitsWithoutRotation)
+            {
+                return "rotation not allowed and insufficient space in current orientation";
+            }
+        }
+
+        // If rotation is allowed but grain constraints prevent both orientations
+        if (!grainOkWithoutRotation && !grainOkWithRotation)
+        {
+            string grainType = panel.GrainDirection == PanelGrainDirection.MatchSheet ?
+                "must match sheet grain" :
+                panel.GrainDirection == PanelGrainDirection.FixedHorizontal ?
+                "must be horizontal" : "must be vertical";
+            return $"grain direction constraint not met ({grainType})";
+        }
+
+        // If it fits dimensionally and grain is OK, then it's a space issue
+        if ((fitsWithoutRotation && grainOkWithoutRotation) ||
+            (fitsWithRotation && grainOkWithRotation && panel.RotationConstraint == RotationConstraint.Rotation90Allowed))
+        {
+            return "insufficient contiguous space available (try optimizing panel placement order)";
+        }
+
+        return "unknown constraint (check panel properties)";
+    }
+
     private void PlacePanel(Panel panel, SubSheet subSheet, PanelPlacement placement)
     {
         var placed = new PlacedPanel(
@@ -543,6 +603,7 @@ public class BeamSawNestingAlgorithm
     public List<SubSheet> GetRemainingSubSheets() => remainingSubSheets;
     public List<CutLine> GetCutLines() => cutLines;
     public List<CutOperation> GetCutSequence() => cutSequence;
+    public List<string> GetWarnings() => warnings;
     public int GetSheetCount() => currentSheetIndex + 1;
 
     public List<double> GetSheetUtilization()
