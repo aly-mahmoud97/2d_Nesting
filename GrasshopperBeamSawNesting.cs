@@ -31,7 +31,7 @@
  * Statistics        List          Summary statistics
  * Transforms        List          Transformations from origin (0,0,0) to each panel position
  * PanelTags         List          Text tags for each panel (Width x Height, ID)
- * PanelTagPlanes    List          3D planes for positioning text tags at panel centers
+ * PanelColors       List          Colors for each panel (same color for identical dimensions)
  * A                 string        Debug messages and status
  *
  */
@@ -623,7 +623,7 @@ public class Script_Instance : GH_ScriptInstance
         ref object Statistics,
         ref object Transforms,
         ref object PanelTags,
-        ref object PanelTagPlanes,
+        ref object PanelColors,
         ref object A)
     {
         var debugMessages = new List<string>();
@@ -774,7 +774,24 @@ public class Script_Instance : GH_ScriptInstance
             var panelInfoList = new List<string>();
             var transformList = new List<Transform>();
             var panelTagList = new List<string>();
-            var panelTagPlaneList = new List<Plane>();
+            var panelColorList = new List<Color>();
+
+            // Create color mapping for unique panel dimensions
+            var dimensionColorMap = new Dictionary<string, Color>();
+            var uniqueDimensions = placed
+                .Select(p => $"{Math.Min(p.Panel.Width, p.Panel.Height):F2}x{Math.Max(p.Panel.Width, p.Panel.Height):F2}")
+                .Distinct()
+                .ToList();
+
+            // Generate distinct colors for each unique dimension
+            for (int i = 0; i < uniqueDimensions.Count; i++)
+            {
+                // Use HSV color space for visually distinct colors
+                float hue = (i * 360.0f / uniqueDimensions.Count) % 360.0f;
+                float saturation = 0.7f + (i % 2) * 0.2f; // Alternate between 0.7 and 0.9
+                float value = 0.8f + (i % 3) * 0.1f; // Cycle between 0.8, 0.9, 1.0
+                dimensionColorMap[uniqueDimensions[i]] = ColorFromHSV(hue, saturation, value);
+            }
 
             foreach (var p in placed)
             {
@@ -815,21 +832,16 @@ public class Script_Instance : GH_ScriptInstance
                 // Create panel tag
                 panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
 
-                // Create plane for panel tag positioning (at panel center)
-                Point3d tagPosition = new Point3d(
-                    p.X + p.Width / 2 + offset.X,
-                    p.Y + p.Height / 2 + offset.Y,
-                    0
-                );
-                Plane tagPlane = new Plane(tagPosition, Vector3d.ZAxis);
-                panelTagPlaneList.Add(tagPlane);
+                // Assign color based on panel dimensions (normalized to handle rotations)
+                string dimensionKey = $"{Math.Min(p.Panel.Width, p.Panel.Height):F2}x{Math.Max(p.Panel.Width, p.Panel.Height):F2}";
+                panelColorList.Add(dimensionColorMap[dimensionKey]);
             }
 
             PlacedRectangles = placedRects;
             PanelInfo = panelInfoList;
             Transforms = transformList;
             PanelTags = panelTagList;
-            PanelTagPlanes = panelTagPlaneList;
+            PanelColors = panelColorList;
 
             // Sheet rectangles in grid layout
             var sheetRects = new List<Rectangle3d>();
@@ -904,6 +916,41 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"ERROR: {ex.Message}");
             debugMessages.Add($"Stack trace: {ex.StackTrace}");
             A = string.Join("\n", debugMessages);
+        }
+    }
+
+    /// <summary>
+    /// Convert HSV color to RGB Color
+    /// </summary>
+    /// <param name="hue">Hue (0-360)</param>
+    /// <param name="saturation">Saturation (0-1)</param>
+    /// <param name="value">Value/Brightness (0-1)</param>
+    /// <returns>RGB Color</returns>
+    private Color ColorFromHSV(float hue, float saturation, float value)
+    {
+        int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+        float f = hue / 60 - (float)Math.Floor(hue / 60);
+
+        value = value * 255;
+        int v = Convert.ToInt32(value);
+        int p = Convert.ToInt32(value * (1 - saturation));
+        int q = Convert.ToInt32(value * (1 - f * saturation));
+        int t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
+
+        switch (hi)
+        {
+            case 0:
+                return Color.FromArgb(255, v, t, p);
+            case 1:
+                return Color.FromArgb(255, q, v, p);
+            case 2:
+                return Color.FromArgb(255, p, v, t);
+            case 3:
+                return Color.FromArgb(255, p, q, v);
+            case 4:
+                return Color.FromArgb(255, t, p, v);
+            default:
+                return Color.FromArgb(255, v, p, q);
         }
     }
 }
