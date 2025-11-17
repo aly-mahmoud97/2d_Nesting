@@ -321,6 +321,7 @@ namespace BeamSawNesting
         private List<SubSheet> remainingSubSheets;
         private List<CutLine> cutLines;
         private List<CutOperation> cutSequence;
+        private List<string> warnings;
         private int currentSheetIndex;
         private int nextCutId;
 
@@ -343,6 +344,7 @@ namespace BeamSawNesting
             this.remainingSubSheets = new List<SubSheet>();
             this.cutLines = new List<CutLine>();
             this.cutSequence = new List<CutOperation>();
+            this.warnings = new List<string>();
             this.currentSheetIndex = 0;
             this.nextCutId = 0;
         }
@@ -372,7 +374,8 @@ namespace BeamSawNesting
                     if (!placed)
                     {
                         // Panel is too large for sheet
-                        Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                        string warning = $"Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}";
+                        warnings.Add(warning);
                     }
                 }
             }
@@ -735,6 +738,7 @@ namespace BeamSawNesting
         public List<SubSheet> GetRemainingSubSheets() => remainingSubSheets;
         public List<CutLine> GetCutLines() => cutLines;
         public List<CutOperation> GetCutSequence() => cutSequence;
+        public List<string> GetWarnings() => warnings;
         public int GetSheetCount() => currentSheetIndex + 1;
 
         /// <summary>

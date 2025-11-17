@@ -280,6 +280,7 @@ public class BeamSawNestingAlgorithm
     private List<SubSheet> remainingSubSheets;
     private List<CutLine> cutLines;
     private List<CutOperation> cutSequence;
+    private List<string> warnings;
     private int currentSheetIndex;
     private int nextCutId;
 
@@ -302,6 +303,7 @@ public class BeamSawNestingAlgorithm
         this.remainingSubSheets = new List<SubSheet>();
         this.cutLines = new List<CutLine>();
         this.cutSequence = new List<CutOperation>();
+        this.warnings = new List<string>();
         this.currentSheetIndex = 0;
         this.nextCutId = 0;
     }
@@ -322,7 +324,8 @@ public class BeamSawNestingAlgorithm
 
                 if (!placed)
                 {
-                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                    string warning = $"Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}";
+                    warnings.Add(warning);
                 }
             }
         }
@@ -543,6 +546,7 @@ public class BeamSawNestingAlgorithm
     public List<SubSheet> GetRemainingSubSheets() => remainingSubSheets;
     public List<CutLine> GetCutLines() => cutLines;
     public List<CutOperation> GetCutSequence() => cutSequence;
+    public List<string> GetWarnings() => warnings;
     public int GetSheetCount() => currentSheetIndex + 1;
 
     public List<double> GetSheetUtilization()
@@ -749,6 +753,19 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Panels placed: {placed.Count} / {panels.Count}");
             debugMessages.Add($"Overall efficiency: {algorithm.GetOverallEfficiency():F2}%");
             debugMessages.Add($"Total cuts: {cuts.Count}");
+
+            // Display warnings if any
+            var algorithmWarnings = algorithm.GetWarnings();
+            if (algorithmWarnings.Count > 0)
+            {
+                debugMessages.Add("");
+                debugMessages.Add($"=== WARNINGS ===");
+                foreach (var warning in algorithmWarnings)
+                {
+                    debugMessages.Add($"WARNING: {warning}");
+                }
+            }
+
             debugMessages.Add("");
 
             // Calculate grid layout for sheets
