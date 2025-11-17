@@ -751,6 +751,18 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Total cuts: {cuts.Count}");
             debugMessages.Add("");
 
+            // Display warnings for panels that couldn't be nested
+            var warnings = algorithm.GetWarnings();
+            if (warnings.Count > 0)
+            {
+                debugMessages.Add($"=== WARNINGS ({warnings.Count}) ===");
+                foreach (var warning in warnings)
+                {
+                    debugMessages.Add(warning);
+                }
+                debugMessages.Add("");
+            }
+
             // Calculate grid layout for sheets
             int sheetCount = algorithm.GetSheetCount();
             int cols = (int)Math.Ceiling(Math.Sqrt(sheetCount));
@@ -881,6 +893,14 @@ public class Script_Instance : GH_ScriptInstance
             {
                 stats.Add($"Sheet {i} efficiency: {utilization[i]:F2}%");
             }
+
+            // Add warnings to statistics if any
+            if (warnings.Count > 0)
+            {
+                stats.Add("");
+                stats.Add($"Warnings: {warnings.Count} panel(s) could not be nested");
+            }
+
             Statistics = stats;
 
             debugMessages.Add("SUCCESS: Algorithm completed");
