@@ -141,12 +141,20 @@ class BeamSawNestingAlgorithm:
             placed = self._try_place_panel(panel)
 
             if not placed:
+                sheet_index_before_add = self.current_sheet_index
                 self._add_new_sheet()
                 placed = self._try_place_panel(panel)
 
                 if not placed:
+                    # Panel cannot be placed even on empty sheet - remove the empty sheet we just created
+                    empty_sheet = next((s for s in self.remaining_sub_sheets
+                                       if s.sheet_index == self.current_sheet_index), None)
+                    if empty_sheet:
+                        self.remaining_sub_sheets.remove(empty_sheet)
+                    self.current_sheet_index = sheet_index_before_add  # Revert to previous sheet index
+
                     print(f"Warning: Panel {panel.id} (size {panel.width}x{panel.height}) "
-                          f"is too large for sheet {self.sheet_width}x{self.sheet_height}")
+                          f"cannot be placed due to grain direction or size constraints")
 
     def _sort_panels(self, panels: List[Panel]) -> List[Panel]:
         """Sort panels according to strategy"""

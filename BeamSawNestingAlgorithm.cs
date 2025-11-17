@@ -366,13 +366,21 @@ namespace BeamSawNesting
                 // If couldn't place on current sheets, add a new sheet
                 if (!placed)
                 {
+                    int sheetIndexBeforeAdd = currentSheetIndex;
                     AddNewSheet();
                     placed = TryPlacePanel(panel);
 
                     if (!placed)
                     {
-                        // Panel is too large for sheet
-                        Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                        // Panel cannot be placed even on empty sheet - remove the empty sheet we just created
+                        var emptySheet = remainingSubSheets.FirstOrDefault(s => s.SheetIndex == currentSheetIndex);
+                        if (emptySheet != null)
+                        {
+                            remainingSubSheets.Remove(emptySheet);
+                        }
+                        currentSheetIndex = sheetIndexBeforeAdd;  // Revert to previous sheet index
+
+                        Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) cannot be placed due to grain direction or size constraints");
                     }
                 }
             }
