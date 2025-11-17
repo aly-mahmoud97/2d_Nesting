@@ -31,6 +31,7 @@
  * Statistics        List          Summary statistics
  * Transforms        List          Transformations from origin (0,0,0) to each panel position
  * PanelTags         List          Text tags for each panel (Width x Height, ID)
+ * PanelColors       List          Colors assigned to panels grouped by dimensions
  * A                 string        Debug messages and status
  *
  */
@@ -280,6 +281,7 @@ public class BeamSawNestingAlgorithm
     private List<SubSheet> remainingSubSheets;
     private List<CutLine> cutLines;
     private List<CutOperation> cutSequence;
+    private List<string> warnings;
     private int currentSheetIndex;
     private int nextCutId;
 
@@ -302,6 +304,7 @@ public class BeamSawNestingAlgorithm
         this.remainingSubSheets = new List<SubSheet>();
         this.cutLines = new List<CutLine>();
         this.cutSequence = new List<CutOperation>();
+        this.warnings = new List<string>();
         this.currentSheetIndex = 0;
         this.nextCutId = 0;
     }
@@ -322,7 +325,11 @@ public class BeamSawNestingAlgorithm
 
                 if (!placed)
                 {
-                    Console.WriteLine($"Warning: Panel {panel.Id} (size {panel.Width}x{panel.Height}) is too large for sheet {sheetWidth}x{sheetHeight}");
+                    // Panel could not be placed - determine why and add warning
+                    string reason = DetermineFailureReason(panel);
+                    string warningMsg = $"WARNING: Panel {(string.IsNullOrEmpty(panel.Tag) ? panel.Id.ToString() : panel.Tag)} " +
+                                      $"({panel.Width:F1}mm x {panel.Height:F1}mm) could not be nested - {reason}";
+                    warnings.Add(warningMsg);
                 }
             }
         }
@@ -444,6 +451,60 @@ public class BeamSawNestingAlgorithm
         return true;
     }
 
+    private string DetermineFailureReason(Panel panel)
+    {
+        // Check if panel is too large for sheet (even with rotation if allowed)
+        bool fitsWithoutRotation = panel.Width <= sheetWidth && panel.Height <= sheetHeight;
+        bool fitsWithRotation = panel.Height <= sheetWidth && panel.Width <= sheetHeight;
+
+        if (!fitsWithoutRotation && !fitsWithRotation)
+        {
+            return $"panel dimensions exceed sheet size ({sheetWidth:F1}mm x {sheetHeight:F1}mm)";
+        }
+
+        // Check grain direction constraints
+        string grainDir;
+        bool grainOkWithoutRotation = ValidateGrainDirection(panel, false, out grainDir);
+        bool grainOkWithRotation = ValidateGrainDirection(panel, true, out grainDir);
+
+        // If rotation is not allowed and grain fails
+        if (panel.RotationConstraint == RotationConstraint.NoRotation)
+        {
+            if (!grainOkWithoutRotation)
+            {
+                string grainType = panel.GrainDirection == PanelGrainDirection.MatchSheet ?
+                    "must match sheet grain" :
+                    panel.GrainDirection == PanelGrainDirection.FixedHorizontal ?
+                    "must be horizontal" : "must be vertical";
+                return $"grain direction constraint not met ({grainType}) and rotation not allowed";
+            }
+
+            if (fitsWithoutRotation)
+            {
+                return "rotation not allowed and insufficient space in current orientation";
+            }
+        }
+
+        // If rotation is allowed but grain constraints prevent both orientations
+        if (!grainOkWithoutRotation && !grainOkWithRotation)
+        {
+            string grainType = panel.GrainDirection == PanelGrainDirection.MatchSheet ?
+                "must match sheet grain" :
+                panel.GrainDirection == PanelGrainDirection.FixedHorizontal ?
+                "must be horizontal" : "must be vertical";
+            return $"grain direction constraint not met ({grainType})";
+        }
+
+        // If it fits dimensionally and grain is OK, then it's a space issue
+        if ((fitsWithoutRotation && grainOkWithoutRotation) ||
+            (fitsWithRotation && grainOkWithRotation && panel.RotationConstraint == RotationConstraint.Rotation90Allowed))
+        {
+            return "insufficient contiguous space available (try optimizing panel placement order)";
+        }
+
+        return "unknown constraint (check panel properties)";
+    }
+
     private void PlacePanel(Panel panel, SubSheet subSheet, PanelPlacement placement)
     {
         var placed = new PlacedPanel(
@@ -543,6 +604,7 @@ public class BeamSawNestingAlgorithm
     public List<SubSheet> GetRemainingSubSheets() => remainingSubSheets;
     public List<CutLine> GetCutLines() => cutLines;
     public List<CutOperation> GetCutSequence() => cutSequence;
+    public List<string> GetWarnings() => warnings;
     public int GetSheetCount() => currentSheetIndex + 1;
 
     public List<double> GetSheetUtilization()
@@ -622,6 +684,7 @@ public class Script_Instance : GH_ScriptInstance
         ref object Statistics,
         ref object Transforms,
         ref object PanelTags,
+        ref object PanelColors,
         ref object A)
     {
         var debugMessages = new List<string>();
@@ -751,6 +814,18 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Total cuts: {cuts.Count}");
             debugMessages.Add("");
 
+            // Display warnings for panels that couldn't be nested
+            var warnings = algorithm.GetWarnings();
+            if (warnings.Count > 0)
+            {
+                debugMessages.Add($"=== WARNINGS ({warnings.Count}) ===");
+                foreach (var warning in warnings)
+                {
+                    debugMessages.Add(warning);
+                }
+                debugMessages.Add("");
+            }
+
             // Calculate grid layout for sheets
             int sheetCount = algorithm.GetSheetCount();
             int cols = (int)Math.Ceiling(Math.Sqrt(sheetCount));
@@ -813,10 +888,36 @@ public class Script_Instance : GH_ScriptInstance
                 panelTagList.Add($"{p.Width:F2}×{p.Height:F2} (#{p.Panel.Id})");
             }
 
+            // Generate colors based on panel dimensions
+            var panelColorList = new List<Color>();
+            var dimensionGroups = new Dictionary<string, int>(); // dimension key -> color index
+            var colorPalette = GenerateColorPalette(50); // Generate palette with up to 50 distinct colors
+            int currentColorIndex = 0;
+            const double tolerance = 0.1; // Tolerance for comparing dimensions (in mm)
+
+            foreach (var p in placed)
+            {
+                // Create a dimension key (round to nearest 0.1mm to group similar sizes)
+                double w = Math.Round(p.Panel.Width / tolerance) * tolerance;
+                double h = Math.Round(p.Panel.Height / tolerance) * tolerance;
+                // Normalize the key so that WxH and HxW get the same color
+                string dimKey = w <= h ? $"{w:F1}x{h:F1}" : $"{h:F1}x{w:F1}";
+
+                // Assign color index for this dimension group
+                if (!dimensionGroups.ContainsKey(dimKey))
+                {
+                    dimensionGroups[dimKey] = currentColorIndex % colorPalette.Count;
+                    currentColorIndex++;
+                }
+
+                panelColorList.Add(colorPalette[dimensionGroups[dimKey]]);
+            }
+
             PlacedRectangles = placedRects;
             PanelInfo = panelInfoList;
             Transforms = transformList;
             PanelTags = panelTagList;
+            PanelColors = panelColorList;
 
             // Sheet rectangles in grid layout
             var sheetRects = new List<Rectangle3d>();
@@ -881,6 +982,14 @@ public class Script_Instance : GH_ScriptInstance
             {
                 stats.Add($"Sheet {i} efficiency: {utilization[i]:F2}%");
             }
+
+            // Add warnings to statistics if any
+            if (warnings.Count > 0)
+            {
+                stats.Add("");
+                stats.Add($"Warnings: {warnings.Count} panel(s) could not be nested");
+            }
+
             Statistics = stats;
 
             debugMessages.Add("SUCCESS: Algorithm completed");
@@ -892,5 +1001,74 @@ public class Script_Instance : GH_ScriptInstance
             debugMessages.Add($"Stack trace: {ex.StackTrace}");
             A = string.Join("\n", debugMessages);
         }
+    }
+
+    /// <summary>
+    /// Generate a palette of visually distinct colors using HSV color space
+    /// </summary>
+    private List<Color> GenerateColorPalette(int count)
+    {
+        var colors = new List<Color>();
+
+        // Use golden ratio for hue distribution to maximize color distinction
+        double goldenRatioConjugate = 0.618033988749895;
+        double hue = 0.0;
+
+        for (int i = 0; i < count; i++)
+        {
+            // Vary saturation and value to create more distinct colors
+            double saturation = 0.7 + (i % 3) * 0.1; // 0.7, 0.8, 0.9
+            double value = 0.8 + (i % 2) * 0.15;     // 0.8, 0.95
+
+            Color color = HSVToRGB(hue, saturation, value);
+            colors.Add(color);
+
+            hue += goldenRatioConjugate;
+            hue = hue % 1.0; // Keep hue in [0, 1] range
+        }
+
+        return colors;
+    }
+
+    /// <summary>
+    /// Convert HSV color to RGB
+    /// </summary>
+    private Color HSVToRGB(double h, double s, double v)
+    {
+        h = h % 1.0;
+        int hi = (int)(h * 6);
+        double f = h * 6 - hi;
+        double p = v * (1 - s);
+        double q = v * (1 - f * s);
+        double t = v * (1 - (1 - f) * s);
+
+        double r, g, b;
+        switch (hi)
+        {
+            case 0:
+                r = v; g = t; b = p;
+                break;
+            case 1:
+                r = q; g = v; b = p;
+                break;
+            case 2:
+                r = p; g = v; b = t;
+                break;
+            case 3:
+                r = p; g = q; b = v;
+                break;
+            case 4:
+                r = t; g = p; b = v;
+                break;
+            default:
+                r = v; g = p; b = q;
+                break;
+        }
+
+        return Color.FromArgb(
+            (int)(r * 255),
+            (int)(g * 255),
+            (int)(b * 255)
+        );
     }
 }
