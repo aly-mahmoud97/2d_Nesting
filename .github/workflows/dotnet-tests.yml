@@ -1,0 +1,49 @@
+name: .NET Tests
+
+on:
+  push:
+    branches: [ "main", "claude/**" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        dotnet-version: [ '6.0.x', '8.0.x' ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET ${{ matrix.dotnet-version }}
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ matrix.dotnet-version }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Run tests
+      run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: '**/coverage.cobertura.xml'
+        fail_ci_if_error: false
+        verbose: true
+
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+
+    steps:
+    - name: Test Summary
+      run: echo "Tests completed. Check individual jobs for results."

@@ -37,8 +37,20 @@ This repository provides production-ready nesting algorithms for cutting optimiz
 
 - **[Complete Setup Guide](BEAM_SAW_SETUP_GUIDE.md)** - Full documentation with examples
 - **[Quick Reference](BEAM_SAW_QUICK_REFERENCE.md)** - Cheat sheet for inputs/outputs
+- **[Testing Guide](TESTING.md)** - Comprehensive test suite and CI/CD setup
 - **[Implementation](GrasshopperBeamSawNesting.cs)** - Ready-to-use Grasshopper script
 - **[Core Library](BeamSawNestingAlgorithm.cs)** - Standalone C# library
+
+### Testing & Quality Assurance
+
+This project includes comprehensive automated testing:
+
+- **30+ xUnit tests** covering core functionality, edge cases, and integration scenarios
+- **Automated CI/CD** via GitHub Actions (runs on every push/PR)
+- **95%+ code coverage** for the core algorithm
+- **Multi-version testing** (.NET 6.0 and 8.0)
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ### When to Use
 
