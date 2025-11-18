@@ -755,7 +755,7 @@ namespace PolylineNesting
 // ============================================================================
 
 void RunScript(
-    List<Polyline> Polylines,
+    List<object> Polylines,
     double SheetWidth,
     double SheetHeight,
     double Margin,
@@ -829,15 +829,32 @@ void RunScript(
     {
         try
         {
-            Polyline poly = Polylines[i];
-
-            // Validate polyline
-            if (poly == null)
+            // Convert object to Curve
+            Curve curve = Polylines[i] as Curve;
+            if (curve == null)
             {
-                validationWarnings.Add($"Polyline {i} is null - skipping");
+                validationWarnings.Add($"Item {i} is not a curve - skipping");
                 continue;
             }
 
+            // Try to get polyline from curve
+            Polyline poly;
+            if (!curve.TryGetPolyline(out poly))
+            {
+                // Try to convert curve to polyline
+                PolylineCurve polyCurve = curve.ToPolyline(0, 0, 0.01, 0.01, 0, 0.01, 0.01, 0, true);
+                if (polyCurve != null && polyCurve.TryGetPolyline(out poly))
+                {
+                    // Successfully converted
+                }
+                else
+                {
+                    validationWarnings.Add($"Could not convert curve {i} to polyline");
+                    continue;
+                }
+            }
+
+            // Validate polyline
             if (poly.Count < 3)
             {
                 validationWarnings.Add($"Polyline {i} has less than 3 points - skipping");
@@ -847,8 +864,7 @@ void RunScript(
             if (!poly.IsClosed)
             {
                 validationWarnings.Add($"Polyline {i} is not closed - attempting to close it");
-                poly = poly.Duplicate();
-                if (!poly.IsClosed && poly.Count > 0)
+                if (poly.Count > 0 && poly[0].DistanceTo(poly[poly.Count - 1]) > 0.01)
                 {
                     poly.Add(poly[0]); // Close it
                 }
@@ -868,11 +884,12 @@ void RunScript(
 
     if (items.Count == 0)
     {
-        Warnings = new List<string> { "No valid polylines to nest after validation" };
+        List<string> noItemsWarnings = new List<string> { "No valid polylines to nest after validation" };
         if (validationWarnings.Count > 0)
         {
-            Warnings.AddRange(validationWarnings);
+            noItemsWarnings.AddRange(validationWarnings);
         }
+        Warnings = noItemsWarnings;
         return;
     }
 
