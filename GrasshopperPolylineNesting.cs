@@ -300,6 +300,11 @@ namespace PolylineNesting
                 return;
             }
 
+            // Diagnostic: Log input
+            _warnings.Add($"DEBUG: Starting nesting with {items.Count} items");
+            _warnings.Add($"DEBUG: Sheet size: {_sheetWidth} × {_sheetHeight}");
+            _warnings.Add($"DEBUG: Margin: {_margin}, Spacing: {_spacing}, GridRes: {_gridResolution}");
+
             AddNewSheet();
 
             List<PolylineItem> sortedItems = SortItems(items);
@@ -307,20 +312,37 @@ namespace PolylineNesting
             for (int i = 0; i < sortedItems.Count; i++)
             {
                 PolylineItem item = sortedItems[i];
+
+                // Diagnostic: Log item details
+                double itemWidth = item.BoundingBox.Max.X - item.BoundingBox.Min.X;
+                double itemHeight = item.BoundingBox.Max.Y - item.BoundingBox.Min.Y;
+                _warnings.Add($"DEBUG: Item {i} - Size: {itemWidth:F1} × {itemHeight:F1}, Area: {item.Area:F1}");
+
                 bool placed = TryPlaceItem(item);
 
                 if (!placed)
                 {
+                    _warnings.Add($"DEBUG: Item {i} failed on sheet {_currentSheetIndex}, trying new sheet");
                     AddNewSheet();
                     placed = TryPlaceItem(item);
 
                     if (!placed)
                     {
-                        _warnings.Add($"Item {item.Id} (Tag: '{item.Tag}') could not be nested - exceeds sheet dimensions or no valid placement found");
+                        _warnings.Add($"ERROR: Item {item.Id} (Tag: '{item.Tag}') could not be nested - exceeds sheet dimensions or no valid placement found");
                         _totalItemsFailed++;
                     }
+                    else
+                    {
+                        _warnings.Add($"DEBUG: Item {i} placed successfully on new sheet {_currentSheetIndex}");
+                    }
+                }
+                else
+                {
+                    _warnings.Add($"DEBUG: Item {i} placed successfully on sheet {_currentSheetIndex}");
                 }
             }
+
+            _warnings.Add($"DEBUG: Nesting complete - {_totalItemsPlaced} placed, {_totalItemsFailed} failed");
         }
 
         public List<PlacedPolyline> GetPlacedPolylines()
@@ -796,12 +818,49 @@ void RunScript(
     PlacementStrategy placeStrat = (PlacementStrategy)(PlacementStrategy % 3);
     RotationMode rotMode = (RotationMode)(RotationMode % 4);
 
-    // Create polyline items
+    // Create polyline items with validation
     List<PolylineItem> items = new List<PolylineItem>();
+    List<string> validationWarnings = new List<string>();
+
     for (int i = 0; i < Polylines.Count; i++)
     {
+        Polyline poly = Polylines[i];
+
+        // Validate polyline
+        if (poly == null)
+        {
+            validationWarnings.Add($"Polyline {i} is null - skipping");
+            continue;
+        }
+
+        if (poly.Count < 3)
+        {
+            validationWarnings.Add($"Polyline {i} has less than 3 points - skipping");
+            continue;
+        }
+
+        if (!poly.IsClosed)
+        {
+            validationWarnings.Add($"Polyline {i} is not closed - attempting to close it");
+            poly = poly.Duplicate();
+            if (!poly.IsClosed && poly.Count > 0)
+            {
+                poly.Add(poly[0]); // Close it
+            }
+        }
+
         string tag = (Tags != null && i < Tags.Count) ? Tags[i] : $"Item_{i}";
-        items.Add(new PolylineItem(Polylines[i], i, tag, rotMode));
+        items.Add(new PolylineItem(poly, i, tag, rotMode));
+    }
+
+    if (items.Count == 0)
+    {
+        Warnings = new List<string> { "No valid polylines to nest after validation" };
+        if (validationWarnings.Count > 0)
+        {
+            Warnings.AddRange(validationWarnings);
+        }
+        return;
     }
 
     // Create algorithm instance
@@ -829,7 +888,18 @@ void RunScript(
         Margins = algorithm.GetMarginRectangles();
         Info = algorithm.GetItemInfo();
         Statistics = algorithm.GetStatistics();
-        Warnings = algorithm.GetWarnings();
+
+        // Combine validation warnings with algorithm warnings
+        List<string> allWarnings = new List<string>();
+        if (validationWarnings.Count > 0)
+        {
+            allWarnings.Add("=== VALIDATION WARNINGS ===");
+            allWarnings.AddRange(validationWarnings);
+            allWarnings.Add("");
+        }
+        allWarnings.AddRange(algorithm.GetWarnings());
+        Warnings = allWarnings;
+
         SheetCount = algorithm.GetSheetCount();
 
         // Generate colors using golden ratio for distinction
@@ -837,7 +907,17 @@ void RunScript(
     }
     catch (Exception ex)
     {
-        Warnings = new List<string> { $"Error during nesting: {ex.Message}" };
+        List<string> errorWarnings = new List<string> {
+            $"EXCEPTION during nesting: {ex.Message}",
+            $"Stack trace: {ex.StackTrace}"
+        };
+        if (validationWarnings.Count > 0)
+        {
+            errorWarnings.Add("");
+            errorWarnings.Add("=== VALIDATION WARNINGS ===");
+            errorWarnings.AddRange(validationWarnings);
+        }
+        Warnings = errorWarnings;
     }
 }
 
