@@ -777,23 +777,26 @@ void RunScript(
     ref object SheetCount,
     ref object Colors)
 {
-    // Clear outputs
-    PlacedPolylines = null;
-    BoundingBoxes = null;
-    Sheets = null;
-    Margins = null;
-    Info = null;
-    Statistics = null;
-    Warnings = null;
-    SheetCount = 0;
-    Colors = null;
-
-    // Input validation
-    if (!Run)
+    // WRAP ENTIRE FUNCTION IN TRY-CATCH TO CATCH ALL EXCEPTIONS
+    try
     {
-        Warnings = new List<string> { "Set Run to True to execute nesting" };
-        return;
-    }
+        // Clear outputs
+        PlacedPolylines = null;
+        BoundingBoxes = null;
+        Sheets = null;
+        Margins = null;
+        Info = null;
+        Statistics = null;
+        Warnings = null;
+        SheetCount = 0;
+        Colors = null;
+
+        // Input validation
+        if (!Run)
+        {
+            Warnings = new List<string> { "Set Run to True to execute nesting" };
+            return;
+        }
 
     if (Polylines == null || Polylines.Count == 0)
     {
@@ -824,33 +827,43 @@ void RunScript(
 
     for (int i = 0; i < Polylines.Count; i++)
     {
-        Polyline poly = Polylines[i];
-
-        // Validate polyline
-        if (poly == null)
+        try
         {
-            validationWarnings.Add($"Polyline {i} is null - skipping");
-            continue;
-        }
+            Polyline poly = Polylines[i];
 
-        if (poly.Count < 3)
-        {
-            validationWarnings.Add($"Polyline {i} has less than 3 points - skipping");
-            continue;
-        }
-
-        if (!poly.IsClosed)
-        {
-            validationWarnings.Add($"Polyline {i} is not closed - attempting to close it");
-            poly = poly.Duplicate();
-            if (!poly.IsClosed && poly.Count > 0)
+            // Validate polyline
+            if (poly == null)
             {
-                poly.Add(poly[0]); // Close it
+                validationWarnings.Add($"Polyline {i} is null - skipping");
+                continue;
             }
-        }
 
-        string tag = (Tags != null && i < Tags.Count) ? Tags[i] : $"Item_{i}";
-        items.Add(new PolylineItem(poly, i, tag, rotMode));
+            if (poly.Count < 3)
+            {
+                validationWarnings.Add($"Polyline {i} has less than 3 points - skipping");
+                continue;
+            }
+
+            if (!poly.IsClosed)
+            {
+                validationWarnings.Add($"Polyline {i} is not closed - attempting to close it");
+                poly = poly.Duplicate();
+                if (!poly.IsClosed && poly.Count > 0)
+                {
+                    poly.Add(poly[0]); // Close it
+                }
+            }
+
+            string tag = (Tags != null && i < Tags.Count) ? Tags[i] : $"Item_{i}";
+
+            // Try to create the item - this might fail if geometry is invalid
+            PolylineItem newItem = new PolylineItem(poly, i, tag, rotMode);
+            items.Add(newItem);
+        }
+        catch (Exception itemEx)
+        {
+            validationWarnings.Add($"Polyline {i} failed validation: {itemEx.Message}");
+        }
     }
 
     if (items.Count == 0)
@@ -918,6 +931,25 @@ void RunScript(
             errorWarnings.AddRange(validationWarnings);
         }
         Warnings = errorWarnings;
+    }
+    } // End of outer try
+    catch (Exception outerEx)
+    {
+        // Catch ANY exception that happens anywhere in the script
+        Warnings = new List<string> {
+            "CRITICAL EXCEPTION - Something went wrong:",
+            $"Message: {outerEx.Message}",
+            $"Type: {outerEx.GetType().Name}",
+            "",
+            "Stack trace:",
+            outerEx.StackTrace ?? "No stack trace available",
+            "",
+            "This error happened before the main nesting logic.",
+            "Common causes:",
+            "- Invalid polyline geometry (null, empty, or corrupted)",
+            "- Input parameter type mismatch",
+            "- Memory or computation error"
+        };
     }
 }
 
