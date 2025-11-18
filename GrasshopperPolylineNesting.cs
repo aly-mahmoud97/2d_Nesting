@@ -147,17 +147,27 @@ namespace PolylineNesting
         {
             Polyline result = Item.Geometry.Duplicate();
 
+            // Step 1: Move to origin based on original bounding box
             Point3d originalMin = Item.BoundingBox.Min;
             Transform moveToOrigin = Transform.Translation(-originalMin.X, -originalMin.Y, 0);
             result.Transform(moveToOrigin);
 
+            // Step 2: Rotate around origin
             if (Math.Abs(RotationDegrees) > 1e-6)
             {
                 Transform rotate = Transform.Rotation(RotationDegrees * Math.PI / 180.0, Vector3d.ZAxis, Point3d.Origin);
                 result.Transform(rotate);
             }
 
-            Transform moveToPosition = Transform.Translation(Position.X, Position.Y, 0);
+            // Step 3: Get the NEW bounding box after rotation
+            BoundingBox rotatedBBox = result.BoundingBox;
+            Point3d rotatedMin = rotatedBBox.Min;
+
+            // Step 4: Translate so the rotated bbox min aligns with target Position
+            Transform moveToPosition = Transform.Translation(
+                Position.X - rotatedMin.X,
+                Position.Y - rotatedMin.Y,
+                0);
             result.Transform(moveToPosition);
 
             return result;
@@ -658,11 +668,13 @@ namespace PolylineNesting
                     Line lineB = new Line(polyB[j], polyB[j + 1]);
 
                     double a_param, b_param;
-                    if (Rhino.Geometry.Intersect.Intersection.LineLine(lineA, lineB, out a_param, out b_param, _spacing, false))
+                    // Use proper numerical tolerance (not _spacing)
+                    const double TOLERANCE = 1e-6;
+                    if (Rhino.Geometry.Intersect.Intersection.LineLine(lineA, lineB, out a_param, out b_param, TOLERANCE, false))
                     {
                         if (a_param >= 0 && a_param <= 1 && b_param >= 0 && b_param <= 1)
                         {
-                            return true;
+                            return true; // Collision detected
                         }
                     }
                 }
@@ -700,6 +712,10 @@ namespace PolylineNesting
 
         bool BoundingBoxesOverlap(BoundingBox a, BoundingBox b)
         {
+            // Check for empty or invalid bounding boxes
+            if (!a.IsValid || !b.IsValid)
+                return false;
+
             // Check if bounding boxes overlap in all three dimensions
             return !(a.Max.X < b.Min.X || a.Min.X > b.Max.X ||
                      a.Max.Y < b.Min.Y || a.Min.Y > b.Max.Y ||
